@@ -626,33 +626,33 @@ function buildLayers(
 ): WorkflowNode[][] {
   if (nodes.length === 0) return [];
 
-  // Find root nodes (no incoming edges)
-  const hasIncoming = new Set(edges.map((e) => e.to));
-  const roots = nodes.filter((n) => !hasIncoming.has(n.id));
+  // Longest-path layering: each node goes in the layer after ALL its predecessors
+  const depth = new Map<string, number>();
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
-  // BFS layering
-  const layers: WorkflowNode[][] = [];
-  const visited = new Set<string>();
-  let current = roots.length > 0 ? roots : [nodes[0]];
-
-  while (current.length > 0) {
-    layers.push(current);
-    current.forEach((n) => visited.add(n.id));
-    const next: WorkflowNode[] = [];
-    for (const node of current) {
-      const children = edges
-        .filter((e) => e.from === node.id)
-        .map((e) => nodes.find((n) => n.id === e.to))
-        .filter((n): n is WorkflowNode => n != null && !visited.has(n.id));
-      for (const c of children) {
-        if (!next.some((x) => x.id === c.id)) next.push(c);
-      }
+  function getDepth(id: string): number {
+    if (depth.has(id)) return depth.get(id)!;
+    const incoming = edges.filter((e) => e.to === id);
+    if (incoming.length === 0) {
+      depth.set(id, 0);
+      return 0;
     }
-    current = next;
+    const d = Math.max(...incoming.map((e) => getDepth(e.from))) + 1;
+    depth.set(id, d);
+    return d;
   }
 
-  // Add orphans (no edges) that weren't visited
-  const orphans = nodes.filter((n) => !visited.has(n.id));
+  for (const n of nodes) getDepth(n.id);
+
+  const maxDepth = Math.max(...Array.from(depth.values()), 0);
+  const layers: WorkflowNode[][] = [];
+  for (let d = 0; d <= maxDepth; d++) {
+    layers.push(nodes.filter((n) => depth.get(n.id) === d));
+  }
+
+  // Add orphans (nodes with no edges at all)
+  const hasEdge = new Set([...edges.map((e) => e.from), ...edges.map((e) => e.to)]);
+  const orphans = nodes.filter((n) => !hasEdge.has(n.id) && !depth.has(n.id));
   if (orphans.length > 0) layers.push(orphans);
 
   return layers;

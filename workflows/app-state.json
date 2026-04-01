@@ -98,7 +98,6 @@
       "name": "Receive Pallets",
       "categoryId": "cat_receiving",
       "inputs": [
-        "Purchase Order",
         "ASN"
       ],
       "outputs": [
@@ -112,7 +111,6 @@
       "name": "Receive Cases",
       "categoryId": "cat_receiving",
       "inputs": [
-        "Purchase Order",
         "ASN"
       ],
       "outputs": [
@@ -187,8 +185,7 @@
       "name": "Discrete Picking",
       "categoryId": "cat_picking",
       "inputs": [
-        "Pick Task",
-        "Located Inventory"
+        "Pick Task"
       ],
       "outputs": [
         "oLPN"
@@ -200,8 +197,7 @@
       "name": "Batch Picking",
       "categoryId": "cat_picking",
       "inputs": [
-        "Pick Task",
-        "Located Inventory"
+        "Pick Task"
       ],
       "outputs": [
         "Tote"
@@ -307,7 +303,7 @@
           "scenarioId": "sc_wave_plan"
         },
         {
-          "id": "lxxxn07d",
+          "id": "8kq3f813",
           "scenarioId": "sc_pick_discrete"
         }
       ],
@@ -329,12 +325,45 @@
           "to": "82k8drwz"
         },
         {
-          "from": "owlaxh9w",
-          "to": "lxxxn07d"
+          "from": "82k8drwz",
+          "to": "8kq3f813"
+        }
+      ]
+    },
+    {
+      "id": "wf_inbound_receive",
+      "name": "Inbound: ASN to Putaway",
+      "steps": [],
+      "nodes": [
+        {
+          "id": "wfn_asn",
+          "scenarioId": "sc_asn_create"
         },
         {
-          "from": "82k8drwz",
-          "to": "lxxxn07d"
+          "id": "wfn_recv",
+          "scenarioId": "sc_recv_pallets"
+        },
+        {
+          "id": "wfn_verify",
+          "scenarioId": "65vihxo6"
+        },
+        {
+          "id": "wfn_putaway",
+          "scenarioId": "sc_putaway_pallets"
+        }
+      ],
+      "edges": [
+        {
+          "from": "wfn_asn",
+          "to": "wfn_recv"
+        },
+        {
+          "from": "wfn_recv",
+          "to": "wfn_verify"
+        },
+        {
+          "from": "wfn_recv",
+          "to": "wfn_putaway"
         }
       ]
     }
