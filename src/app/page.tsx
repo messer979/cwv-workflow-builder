@@ -1,530 +1,226 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import type {
-  AppState,
-  Category,
-  Scenario,
-  DataType,
-  Workflow,
-  WorkflowStep,
-} from "@/types";
+import { useState, useRef, useEffect } from "react";
+import { useStore } from "@/store";
+import type { Scenario } from "@/types";
 
-const COLORS = [
+// ─── Color assignment for data type badges ───────────────────────────────────
+
+const BADGE_COLORS = [
   "#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6",
   "#ec4899", "#06b6d4", "#f97316", "#14b8a6", "#6366f1",
 ];
 
-function genId() {
-  return Math.random().toString(36).slice(2, 10);
+const colorMap = new Map<string, string>();
+
+function colorFor(name: string): string {
+  const key = name.toLowerCase();
+  if (!colorMap.has(key)) {
+    colorMap.set(key, BADGE_COLORS[colorMap.size % BADGE_COLORS.length]);
+  }
+  return colorMap.get(key)!;
 }
 
-const DEFAULT_STATE: AppState = {
-  dataTypes: [],
-  categories: [],
-  scenarios: [],
-  workflows: [],
-};
+// ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const [state, setState] = useState<AppState>(DEFAULT_STATE);
-  const [loaded, setLoaded] = useState(false);
-  const [activeTab, setActiveTab] = useState<"data" | "scenarios" | "workflows">("data");
-  const [saving, setSaving] = useState(false);
+  const store = useStore();
+  const [mounted, setMounted] = useState(false);
 
-  // Load state on mount
-  useEffect(() => {
-    fetch("/api/state")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data && data.dataTypes) setState(data);
-        setLoaded(true);
-      })
-      .catch(() => setLoaded(true));
-  }, []);
+  useEffect(() => setMounted(true), []);
 
-  // Auto-save state whenever it changes (after initial load)
-  const saveState = useCallback(
-    async (s: AppState) => {
-      setSaving(true);
-      await fetch("/api/state", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(s),
-      }).catch(() => {});
-      setSaving(false);
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (loaded) saveState(state);
-  }, [state, loaded, saveState]);
-
-  if (!loaded) {
+  if (!mounted) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-lg text-zinc-500">Loading...</p>
+      <div className="flex items-center justify-center h-screen bg-white dark:bg-zinc-950">
+        <p className="text-zinc-500 dark:text-zinc-400">Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen">
-      <header className="border-b border-zinc-200 bg-white px-6 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-zinc-900">
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+      <header className="sticky top-0 z-10 border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur px-6 py-4">
+        <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
           Warehouse Workflow Builder
         </h1>
-        <span className="text-xs text-zinc-400">
-          {saving ? "Saving..." : "Saved"}
-        </span>
       </header>
 
-      <nav className="flex border-b border-zinc-200 bg-white px-6">
-        {(["data", "scenarios", "workflows"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab
-                ? "border-blue-500 text-blue-600"
-                : "border-transparent text-zinc-500 hover:text-zinc-700"
-            }`}
-          >
-            {tab === "data"
-              ? "Data Types"
-              : tab === "scenarios"
-              ? "Categories & Scenarios"
-              : "Workflows"}
-          </button>
-        ))}
-      </nav>
-
-      <main className="flex-1 overflow-auto bg-zinc-50 p-6">
-        {activeTab === "data" && (
-          <DataTypesPanel
-            dataTypes={state.dataTypes}
-            onChange={(dataTypes) => setState((s) => ({ ...s, dataTypes }))}
-          />
-        )}
-        {activeTab === "scenarios" && (
-          <ScenariosPanel
-            state={state}
-            onChange={(update) => setState((s) => ({ ...s, ...update }))}
-          />
-        )}
-        {activeTab === "workflows" && (
-          <WorkflowsPanel
-            state={state}
-            onChange={(workflows) => setState((s) => ({ ...s, workflows }))}
-          />
-        )}
-      </main>
-    </div>
-  );
-}
-
-// ─── Data Types Panel ────────────────────────────────────────────────────────
-
-function DataTypesPanel({
-  dataTypes,
-  onChange,
-}: {
-  dataTypes: DataType[];
-  onChange: (dt: DataType[]) => void;
-}) {
-  const [name, setName] = useState("");
-
-  const add = () => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    if (dataTypes.some((d) => d.name.toLowerCase() === trimmed.toLowerCase())) return;
-    const color = COLORS[dataTypes.length % COLORS.length];
-    onChange([...dataTypes, { id: genId(), name: trimmed, color }]);
-    setName("");
-  };
-
-  const remove = (id: string) => {
-    onChange(dataTypes.filter((d) => d.id !== id));
-  };
-
-  return (
-    <div className="max-w-2xl mx-auto">
-      <div className="bg-white rounded-lg border border-zinc-200 p-6">
-        <h2 className="text-lg font-semibold text-zinc-900 mb-1">Data Types</h2>
-        <p className="text-sm text-zinc-500 mb-4">
-          Define the types of data that flow between scenarios (e.g., Purchase Order, LPN, Located Inventory).
-        </p>
-
-        <div className="flex gap-2 mb-4">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && add()}
-            placeholder="e.g. Purchase Order, LPN, Located Inventory..."
-            className="flex-1 px-3 py-2 border border-zinc-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={add}
-            className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors"
-          >
-            Add
-          </button>
-        </div>
-
-        {dataTypes.length === 0 ? (
-          <p className="text-sm text-zinc-400 text-center py-8">
-            No data types yet. Add some above to get started.
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {dataTypes.map((dt) => (
-              <span
-                key={dt.id}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium text-white"
-                style={{ backgroundColor: dt.color }}
-              >
-                {dt.name}
-                <button
-                  onClick={() => remove(dt.id)}
-                  className="ml-1 hover:text-zinc-200 text-white/70"
-                >
-                  x
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
+      <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
+        <CategoriesAndScenarios />
+        <WorkflowsSection />
       </div>
     </div>
   );
 }
 
-// ─── Scenarios Panel ─────────────────────────────────────────────────────────
+// ─── Categories & Scenarios ──────────────────────────────────────────────────
 
-function ScenariosPanel({
-  state,
-  onChange,
-}: {
-  state: AppState;
-  onChange: (update: Partial<AppState>) => void;
-}) {
+function CategoriesAndScenarios() {
+  const { categories, scenarios, addCategory, removeCategory } = useStore();
   const [catName, setCatName] = useState("");
-  const [editingScenario, setEditingScenario] = useState<string | null>(null);
-  const [newScenario, setNewScenario] = useState<{
-    name: string;
-    categoryId: string;
-    inputs: string[];
-    outputs: string[];
-  } | null>(null);
 
-  const addCategory = () => {
+  const handleAdd = () => {
     const trimmed = catName.trim();
     if (!trimmed) return;
-    if (state.categories.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) return;
-    onChange({ categories: [...state.categories, { id: genId(), name: trimmed }] });
+    addCategory(trimmed);
     setCatName("");
   };
 
-  const removeCategory = (id: string) => {
-    onChange({
-      categories: state.categories.filter((c) => c.id !== id),
-      scenarios: state.scenarios.filter((s) => s.categoryId !== id),
-    });
-  };
-
-  const startNewScenario = (categoryId: string) => {
-    setNewScenario({ name: "", categoryId, inputs: [], outputs: [] });
-    setEditingScenario(null);
-  };
-
-  const saveNewScenario = () => {
-    if (!newScenario || !newScenario.name.trim()) return;
-    onChange({
-      scenarios: [
-        ...state.scenarios,
-        {
-          id: genId(),
-          name: newScenario.name.trim(),
-          categoryId: newScenario.categoryId,
-          inputs: newScenario.inputs,
-          outputs: newScenario.outputs,
-        },
-      ],
-    });
-    setNewScenario(null);
-  };
-
-  const removeScenario = (id: string) => {
-    onChange({
-      scenarios: state.scenarios.filter((s) => s.id !== id),
-      workflows: state.workflows.map((w) => ({
-        ...w,
-        steps: w.steps.filter((st) => st.scenarioId !== id),
-      })),
-    });
-  };
-
-  const updateScenario = (id: string, update: Partial<Scenario>) => {
-    onChange({
-      scenarios: state.scenarios.map((s) =>
-        s.id === id ? { ...s, ...update } : s
-      ),
-    });
-  };
-
-  const getDataType = (id: string) =>
-    state.dataTypes.find((d) => d.id === id);
-
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="bg-white rounded-lg border border-zinc-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-zinc-900 mb-1">Categories</h2>
-        <p className="text-sm text-zinc-500 mb-4">
-          Group related scenarios. Scenarios in the same category are alternate
-          flavors (e.g., Receive Cases vs Receive Pallets).
-        </p>
+    <section>
+      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
+        Categories & Scenarios
+      </h2>
+      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+        Scenarios in the same category are alternate flavors &mdash; only one per category can exist in a workflow.
+      </p>
 
-        <div className="flex gap-2 mb-4">
-          <input
-            type="text"
-            value={catName}
-            onChange={(e) => setCatName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addCategory()}
-            placeholder="e.g. Receiving, Putaway, Cycle Counting..."
-            className="flex-1 px-3 py-2 border border-zinc-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={addCategory}
-            className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors"
-          >
-            Add Category
-          </button>
-        </div>
-
-        {state.categories.length === 0 && (
-          <p className="text-sm text-zinc-400 text-center py-4">
-            No categories yet.{" "}
-            {state.dataTypes.length === 0 && "Start by adding Data Types first."}
-          </p>
-        )}
+      <div className="flex gap-2 mb-6">
+        <input
+          type="text"
+          value={catName}
+          onChange={(e) => setCatName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+          placeholder="New category name..."
+          className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md text-sm bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          onClick={handleAdd}
+          className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors"
+        >
+          Add Category
+        </button>
       </div>
 
-      {state.categories.map((cat) => {
-        const catScenarios = state.scenarios.filter(
-          (s) => s.categoryId === cat.id
-        );
-        return (
-          <div
-            key={cat.id}
-            className="bg-white rounded-lg border border-zinc-200 p-6 mb-4"
+      {categories.length === 0 && (
+        <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-6">
+          No categories yet. Add one above to get started.
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        {categories.map((cat) => (
+          <CategoryCard key={cat.id} category={cat} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CategoryCard({ category }: { category: { id: string; name: string } }) {
+  const { scenarios, removeCategory } = useStore();
+  const [adding, setAdding] = useState(false);
+  const catScenarios = scenarios.filter((s) => s.categoryId === category.id);
+
+  return (
+    <div className="bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-semibold text-sm text-zinc-800 dark:text-zinc-200">
+          {category.name}
+        </h3>
+        <div className="flex gap-1">
+          <button
+            onClick={() => setAdding(true)}
+            className="px-2 py-1 text-[10px] font-medium bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
           >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-md font-semibold text-zinc-800">{cat.name}</h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => startNewScenario(cat.id)}
-                  className="px-3 py-1.5 text-xs font-medium bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors"
-                >
-                  + Scenario
-                </button>
-                <button
-                  onClick={() => removeCategory(cat.id)}
-                  className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition-colors"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
+            +
+          </button>
+          <button
+            onClick={() => removeCategory(category.id)}
+            className="px-2 py-1 text-[10px] font-medium bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+          >
+            x
+          </button>
+        </div>
+      </div>
 
-            {catScenarios.length === 0 &&
-              !(newScenario && newScenario.categoryId === cat.id) && (
-                <p className="text-sm text-zinc-400 text-center py-4">
-                  No scenarios in this category yet.
-                </p>
-              )}
+      {catScenarios.length === 0 && !adding && (
+        <p className="text-xs text-zinc-400 dark:text-zinc-500 text-center py-2">
+          No scenarios yet.
+        </p>
+      )}
 
-            <div className="space-y-3">
-              {catScenarios.map((scenario) => (
-                <ScenarioCard
-                  key={scenario.id}
-                  scenario={scenario}
-                  dataTypes={state.dataTypes}
-                  getDataType={getDataType}
-                  isEditing={editingScenario === scenario.id}
-                  onEdit={() =>
-                    setEditingScenario(
-                      editingScenario === scenario.id ? null : scenario.id
-                    )
-                  }
-                  onUpdate={(u) => updateScenario(scenario.id, u)}
-                  onRemove={() => removeScenario(scenario.id)}
-                />
-              ))}
-
-              {newScenario && newScenario.categoryId === cat.id && (
-                <div className="border border-dashed border-blue-300 rounded-lg p-4 bg-blue-50/50">
-                  <input
-                    type="text"
-                    value={newScenario.name}
-                    onChange={(e) =>
-                      setNewScenario({ ...newScenario, name: e.target.value })
-                    }
-                    placeholder="Scenario name..."
-                    className="w-full px-3 py-2 border border-zinc-300 rounded-md text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    autoFocus
-                  />
-
-                  <div className="grid grid-cols-2 gap-4 mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-zinc-600 mb-1 block">
-                        Inputs
-                      </label>
-                      <MultiSelect
-                        options={state.dataTypes}
-                        selected={newScenario.inputs}
-                        onChange={(inputs) =>
-                          setNewScenario({ ...newScenario, inputs })
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-zinc-600 mb-1 block">
-                        Outputs
-                      </label>
-                      <MultiSelect
-                        options={state.dataTypes}
-                        selected={newScenario.outputs}
-                        onChange={(outputs) =>
-                          setNewScenario({ ...newScenario, outputs })
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 justify-end">
-                    <button
-                      onClick={() => setNewScenario(null)}
-                      className="px-3 py-1.5 text-xs text-zinc-600 hover:text-zinc-800"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={saveNewScenario}
-                      disabled={!newScenario.name.trim()}
-                      className="px-3 py-1.5 text-xs font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors"
-                    >
-                      Save Scenario
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
+      <div className="space-y-2">
+        {catScenarios.map((sc) => (
+          <ScenarioRow key={sc.id} scenario={sc} />
+        ))}
+        {adding && (
+          <NewScenarioForm
+            categoryId={category.id}
+            onDone={() => setAdding(false)}
+          />
+        )}
+      </div>
     </div>
   );
 }
 
-function ScenarioCard({
-  scenario,
-  dataTypes,
-  getDataType,
-  isEditing,
-  onEdit,
-  onUpdate,
-  onRemove,
-}: {
-  scenario: Scenario;
-  dataTypes: DataType[];
-  getDataType: (id: string) => DataType | undefined;
-  isEditing: boolean;
-  onEdit: () => void;
-  onUpdate: (u: Partial<Scenario>) => void;
-  onRemove: () => void;
-}) {
+function ScenarioRow({ scenario }: { scenario: Scenario }) {
+  const { removeScenario, updateScenario } = useStore();
+  const [editing, setEditing] = useState(false);
+
   return (
-    <div className="border border-zinc-200 rounded-lg p-4">
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="font-medium text-zinc-800">{scenario.name}</h4>
-        <div className="flex gap-2">
+    <div className="border border-zinc-200 dark:border-zinc-700 rounded p-2">
+      <div className="flex items-center justify-between mb-1">
+        <h4 className="font-medium text-xs text-zinc-800 dark:text-zinc-200">
+          {scenario.name}
+        </h4>
+        <div className="flex gap-1.5">
           <button
-            onClick={onEdit}
-            className="text-xs text-blue-500 hover:text-blue-700"
+            onClick={() => setEditing(!editing)}
+            className="text-[10px] text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
           >
-            {isEditing ? "Done" : "Edit"}
+            {editing ? "Done" : "Edit"}
           </button>
           <button
-            onClick={onRemove}
-            className="text-xs text-red-500 hover:text-red-700"
+            onClick={() => removeScenario(scenario.id)}
+            className="text-[10px] text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
           >
-            Remove
+            x
           </button>
         </div>
       </div>
 
-      <div className="flex gap-6">
-        <div className="flex-1">
-          <span className="text-xs font-medium text-zinc-500 block mb-1">
-            Inputs
-          </span>
-          <div className="flex flex-wrap gap-1">
-            {scenario.inputs.length === 0 ? (
-              <span className="text-xs text-zinc-400">None</span>
-            ) : (
-              scenario.inputs.map((id) => {
-                const dt = getDataType(id);
-                return dt ? (
-                  <DataTypeBadge key={id} dataType={dt} />
-                ) : null;
-              })
-            )}
-          </div>
+      <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap gap-0.5 flex-1">
+          {scenario.inputs.length === 0 ? (
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">No inputs</span>
+          ) : (
+            scenario.inputs.map((name) => (
+              <Badge key={name} name={name} />
+            ))
+          )}
         </div>
-        <div className="text-zinc-300 flex items-center text-lg">
-          &rarr;
-        </div>
-        <div className="flex-1">
-          <span className="text-xs font-medium text-zinc-500 block mb-1">
-            Outputs
-          </span>
-          <div className="flex flex-wrap gap-1">
-            {scenario.outputs.length === 0 ? (
-              <span className="text-xs text-zinc-400">None</span>
-            ) : (
-              scenario.outputs.map((id) => {
-                const dt = getDataType(id);
-                return dt ? (
-                  <DataTypeBadge key={id} dataType={dt} />
-                ) : null;
-              })
-            )}
-          </div>
+        <span className="text-zinc-300 dark:text-zinc-600 text-xs">&rarr;</span>
+        <div className="flex flex-wrap gap-0.5 flex-1">
+          {scenario.outputs.length === 0 ? (
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">No outputs</span>
+          ) : (
+            scenario.outputs.map((name) => (
+              <Badge key={name} name={name} />
+            ))
+          )}
         </div>
       </div>
 
-      {isEditing && (
-        <div className="mt-3 pt-3 border-t border-zinc-100 grid grid-cols-2 gap-4">
+      {editing && (
+        <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-1.5">
           <div>
-            <label className="text-xs font-medium text-zinc-600 mb-1 block">
+            <label className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400 mb-0.5 block">
               Inputs
             </label>
-            <MultiSelect
-              options={dataTypes}
-              selected={scenario.inputs}
-              onChange={(inputs) => onUpdate({ inputs })}
+            <TagInput
+              values={scenario.inputs}
+              onChange={(inputs) => updateScenario(scenario.id, { inputs })}
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-zinc-600 mb-1 block">
+            <label className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400 mb-0.5 block">
               Outputs
             </label>
-            <MultiSelect
-              options={dataTypes}
-              selected={scenario.outputs}
-              onChange={(outputs) => onUpdate({ outputs })}
+            <TagInput
+              values={scenario.outputs}
+              onChange={(outputs) => updateScenario(scenario.id, { outputs })}
             />
           </div>
         </div>
@@ -533,116 +229,327 @@ function ScenarioCard({
   );
 }
 
-function DataTypeBadge({ dataType }: { dataType: DataType }) {
+function NewScenarioForm({
+  categoryId,
+  onDone,
+}: {
+  categoryId: string;
+  onDone: () => void;
+}) {
+  const { addScenario } = useStore();
+  const [name, setName] = useState("");
+  const [inputs, setInputs] = useState<string[]>([]);
+  const [outputs, setOutputs] = useState<string[]>([]);
+
+  const save = () => {
+    if (!name.trim()) return;
+    addScenario(name.trim(), categoryId, inputs, outputs);
+    onDone();
+  };
+
+  return (
+    <div className="border border-dashed border-blue-300 dark:border-blue-700 rounded p-2.5 bg-blue-50/50 dark:bg-blue-500/5">
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Scenario name..."
+        className="w-full px-2 py-1.5 border border-zinc-300 dark:border-zinc-700 rounded text-xs mb-2 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        autoFocus
+      />
+      <div className="space-y-1.5 mb-2">
+        <div>
+          <label className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400 mb-0.5 block">
+            Inputs
+          </label>
+          <TagInput values={inputs} onChange={setInputs} />
+        </div>
+        <div>
+          <label className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400 mb-0.5 block">
+            Outputs
+          </label>
+          <TagInput values={outputs} onChange={setOutputs} />
+        </div>
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button
+          onClick={onDone}
+          className="px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={save}
+          disabled={!name.trim()}
+          className="px-3 py-1.5 text-xs font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors"
+        >
+          Save Scenario
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tag Input with autocomplete ─────────────────────────────────────────────
+
+function TagInput({
+  values,
+  onChange,
+}: {
+  values: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const allKnown = useStore((s) => s.getAllKnownDataTypes)();
+  const [input, setInput] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const suggestions = allKnown.filter(
+    (dt) =>
+      !values.includes(dt) &&
+      dt.toLowerCase().includes(input.toLowerCase())
+  );
+
+  const add = (val: string) => {
+    const trimmed = val.trim();
+    if (!trimmed || values.includes(trimmed)) return;
+    onChange([...values, trimmed]);
+    setInput("");
+    setShowSuggestions(false);
+    inputRef.current?.focus();
+  };
+
+  const remove = (val: string) => {
+    onChange(values.filter((v) => v !== val));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      add(input);
+    } else if (e.key === "Backspace" && input === "" && values.length > 0) {
+      remove(values[values.length - 1]);
+    }
+  };
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <div className="flex flex-wrap gap-1 p-1.5 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 min-h-[36px]">
+        {values.map((v) => (
+          <span
+            key={v}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-white"
+            style={{ backgroundColor: colorFor(v) }}
+          >
+            {v}
+            <button
+              onClick={() => remove(v)}
+              className="text-white/70 hover:text-white"
+            >
+              x
+            </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value);
+            setShowSuggestions(true);
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onKeyDown={handleKeyDown}
+          placeholder={values.length === 0 ? "Type and press Enter..." : ""}
+          className="flex-1 min-w-[100px] px-1 py-0.5 text-xs bg-transparent text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none"
+        />
+      </div>
+
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md shadow-lg max-h-40 overflow-auto">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              onClick={() => add(s)}
+              className="w-full text-left px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2"
+            >
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: colorFor(s) }}
+              />
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Badge ───────────────────────────────────────────────────────────────────
+
+function Badge({ name }: { name: string }) {
   return (
     <span
-      className="inline-block px-2 py-0.5 rounded-full text-xs font-medium text-white"
-      style={{ backgroundColor: dataType.color }}
+      className="inline-block px-1.5 py-0 rounded-full text-[10px] font-medium text-white leading-4"
+      style={{ backgroundColor: colorFor(name) }}
     >
-      {dataType.name}
+      {name}
     </span>
   );
 }
 
-function MultiSelect({
-  options,
-  selected,
-  onChange,
-}: {
-  options: DataType[];
-  selected: string[];
-  onChange: (ids: string[]) => void;
-}) {
-  const toggle = (id: string) => {
-    if (selected.includes(id)) {
-      onChange(selected.filter((s) => s !== id));
-    } else {
-      onChange([...selected, id]);
-    }
-  };
+// ─── Workflows Section ───────────────────────────────────────────────────────
 
-  return (
-    <div className="flex flex-wrap gap-1">
-      {options.length === 0 ? (
-        <span className="text-xs text-zinc-400">
-          Add data types first
-        </span>
-      ) : (
-        options.map((dt) => (
-          <button
-            key={dt.id}
-            onClick={() => toggle(dt.id)}
-            className="inline-block px-2 py-0.5 rounded-full text-xs font-medium transition-all"
-            style={{
-              backgroundColor: selected.includes(dt.id)
-                ? dt.color
-                : "transparent",
-              color: selected.includes(dt.id) ? "white" : dt.color,
-              border: `1.5px solid ${dt.color}`,
-            }}
-          >
-            {dt.name}
-          </button>
-        ))
-      )}
-    </div>
-  );
-}
-
-// ─── Workflows Panel ─────────────────────────────────────────────────────────
-
-function WorkflowsPanel({
-  state,
-  onChange,
-}: {
-  state: AppState;
-  onChange: (workflows: Workflow[]) => void;
-}) {
-  const [editingId, setEditingId] = useState<string | null>(null);
+function WorkflowsSection() {
+  const { workflows, scenarios, categories, addWorkflow } = useStore();
   const [newName, setNewName] = useState("");
 
-  const getScenario = (id: string) =>
-    state.scenarios.find((s) => s.id === id);
-  const getCategory = (id: string) =>
-    state.categories.find((c) => c.id === id);
-  const getDataType = (id: string) =>
-    state.dataTypes.find((d) => d.id === id);
-
-  const createWorkflow = () => {
+  const handleCreate = () => {
     const name = newName.trim() || "New Workflow";
-    const wf: Workflow = { id: genId(), name, steps: [] };
-    onChange([...state.workflows, wf]);
-    setEditingId(wf.id);
+    addWorkflow(name);
     setNewName("");
   };
 
-  const deleteWorkflow = async (id: string) => {
-    onChange(state.workflows.filter((w) => w.id !== id));
-    await fetch("/api/workflows", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    }).catch(() => {});
+  return (
+    <section>
+      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
+        Workflows
+      </h2>
+      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+        Chain scenarios together. Each step&apos;s inputs must be satisfied by previous step outputs.
+      </p>
+
+      <div className="flex gap-2 mb-6">
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+          placeholder="Workflow name..."
+          className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md text-sm bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          onClick={handleCreate}
+          className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors"
+        >
+          Create Workflow
+        </button>
+      </div>
+
+      {workflows.length === 0 && (
+        <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-6">
+          No workflows yet.
+        </p>
+      )}
+
+      <div className="space-y-4">
+        {workflows.map((wf) => (
+          <WorkflowCard key={wf.id} workflow={wf} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WorkflowCard({ workflow }: { workflow: { id: string; name: string; steps: { scenarioId: string; order: number }[] } }) {
+  const {
+    scenarios,
+    categories,
+    removeWorkflow,
+    addWorkflowStep,
+    removeWorkflowStep,
+    moveWorkflowStep,
+  } = useStore();
+  const [editing, setEditing] = useState(false);
+
+  const getScenario = (id: string) => scenarios.find((s) => s.id === id);
+  const getCategory = (id: string) => categories.find((c) => c.id === id);
+
+  // Validate the workflow
+  const validate = () => {
+    const errors: string[] = [];
+    const seenCategories = new Set<string>();
+    const available = new Set<string>();
+
+    for (let i = 0; i < workflow.steps.length; i++) {
+      const sc = getScenario(workflow.steps[i].scenarioId);
+      if (!sc) continue;
+
+      if (seenCategories.has(sc.categoryId)) {
+        const cat = getCategory(sc.categoryId);
+        errors.push(`Step ${i + 1}: Duplicate category "${cat?.name}"`);
+      }
+      seenCategories.add(sc.categoryId);
+
+      if (i > 0) {
+        const missing = sc.inputs.filter((inp) => !available.has(inp));
+        if (missing.length > 0) {
+          errors.push(`Step ${i + 1} ("${sc.name}"): Missing inputs: ${missing.join(", ")}`);
+        }
+      }
+
+      for (const o of sc.outputs) available.add(o);
+    }
+
+    return errors;
   };
 
-  const updateWorkflow = (id: string, update: Partial<Workflow>) => {
-    onChange(
-      state.workflows.map((w) => (w.id === id ? { ...w, ...update } : w))
+  // Which scenarios can be added next
+  const getAddable = () => {
+    const usedCategoryIds = new Set(
+      workflow.steps
+        .map((st) => getScenario(st.scenarioId)?.categoryId)
+        .filter(Boolean) as string[]
     );
+
+    const available = new Set<string>();
+    for (const st of workflow.steps) {
+      const sc = getScenario(st.scenarioId);
+      if (sc) for (const o of sc.outputs) available.add(o);
+    }
+
+    return scenarios.map((sc) => {
+      if (usedCategoryIds.has(sc.categoryId)) {
+        return { scenario: sc, reason: `Already has "${getCategory(sc.categoryId)?.name}" category` };
+      }
+      if (workflow.steps.length > 0) {
+        const missing = sc.inputs.filter((inp) => !available.has(inp));
+        if (missing.length > 0) {
+          return { scenario: sc, reason: `Missing: ${missing.join(", ")}` };
+        }
+      }
+      return { scenario: sc, reason: undefined };
+    });
   };
 
-  const exportWorkflow = async (wf: Workflow) => {
+  const errors = validate();
+  const isValid = errors.length === 0;
+  const addable = getAddable();
+
+  const handleExport = async () => {
     const enriched = {
-      ...wf,
-      steps: wf.steps.map((st) => {
+      ...workflow,
+      steps: workflow.steps.map((st) => {
         const sc = getScenario(st.scenarioId);
         const cat = sc ? getCategory(sc.categoryId) : null;
         return {
           ...st,
           scenarioName: sc?.name,
           categoryName: cat?.name,
-          inputs: sc?.inputs.map((id) => getDataType(id)?.name).filter(Boolean),
-          outputs: sc?.outputs.map((id) => getDataType(id)?.name).filter(Boolean),
+          inputs: sc?.inputs,
+          outputs: sc?.outputs,
         };
       }),
     };
@@ -654,374 +561,117 @@ function WorkflowsPanel({
   };
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="bg-white rounded-lg border border-zinc-200 p-6 mb-6">
-        <h2 className="text-lg font-semibold text-zinc-900 mb-1">Workflows</h2>
-        <p className="text-sm text-zinc-500 mb-4">
-          Chain scenarios together. Each step&#39;s inputs must be satisfied by
-          the outputs of previous steps (or be the first step&#39;s external inputs).
-        </p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && createWorkflow()}
-            placeholder="Workflow name..."
-            className="flex-1 px-3 py-2 border border-zinc-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={createWorkflow}
-            className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors"
-          >
-            Create Workflow
-          </button>
-        </div>
-      </div>
-
-      {state.workflows.map((wf) => (
-        <WorkflowCard
-          key={wf.id}
-          workflow={wf}
-          state={state}
-          isEditing={editingId === wf.id}
-          onToggleEdit={() =>
-            setEditingId(editingId === wf.id ? null : wf.id)
-          }
-          onUpdate={(u) => updateWorkflow(wf.id, u)}
-          onDelete={() => deleteWorkflow(wf.id)}
-          onExport={() => exportWorkflow(wf)}
-          getScenario={getScenario}
-          getCategory={getCategory}
-          getDataType={getDataType}
-        />
-      ))}
-
-      {state.workflows.length === 0 && (
-        <p className="text-sm text-zinc-400 text-center py-8">
-          No workflows yet. Create one above.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function WorkflowCard({
-  workflow,
-  state,
-  isEditing,
-  onToggleEdit,
-  onUpdate,
-  onDelete,
-  onExport,
-  getScenario,
-  getCategory,
-  getDataType,
-}: {
-  workflow: Workflow;
-  state: AppState;
-  isEditing: boolean;
-  onToggleEdit: () => void;
-  onUpdate: (u: Partial<Workflow>) => void;
-  onDelete: () => void;
-  onExport: () => void;
-  getScenario: (id: string) => Scenario | undefined;
-  getCategory: (id: string) => Category | undefined;
-  getDataType: (id: string) => DataType | undefined;
-}) {
-  const [exportStatus, setExportStatus] = useState<string>("");
-
-  // Compute available outputs at each step
-  const getAvailableOutputsAt = (stepIndex: number): string[] => {
-    const outputs: string[] = [];
-    for (let i = 0; i < stepIndex; i++) {
-      const sc = getScenario(workflow.steps[i].scenarioId);
-      if (sc) outputs.push(...sc.outputs);
-    }
-    return outputs;
-  };
-
-  // Validate a candidate scenario at a given position
-  const canAddScenarioAt = (
-    scenarioId: string,
-    position: number
-  ): { valid: boolean; reason?: string } => {
-    const scenario = getScenario(scenarioId);
-    if (!scenario) return { valid: false, reason: "Scenario not found" };
-
-    // Check: no two scenarios from the same category
-    const existingCategoryIds = workflow.steps
-      .map((st) => getScenario(st.scenarioId)?.categoryId)
-      .filter(Boolean);
-    if (existingCategoryIds.includes(scenario.categoryId)) {
-      const cat = getCategory(scenario.categoryId);
-      return {
-        valid: false,
-        reason: `Already has a scenario from "${cat?.name}" category`,
-      };
-    }
-
-    // Check: if first step, any scenario is fine (it gets external inputs)
-    if (position === 0 && workflow.steps.length === 0) {
-      return { valid: true };
-    }
-
-    // Check: inputs must be satisfied by accumulated outputs of prior steps
-    const availableOutputs = getAvailableOutputsAt(position);
-
-    // For the first step, all inputs are considered "external" - no restriction
-    if (position === 0) return { valid: true };
-
-    const unsatisfied = scenario.inputs.filter(
-      (inp) => !availableOutputs.includes(inp)
-    );
-    if (unsatisfied.length > 0) {
-      const names = unsatisfied
-        .map((id) => getDataType(id)?.name || "Unknown")
-        .join(", ");
-      return {
-        valid: false,
-        reason: `Missing required inputs: ${names}`,
-      };
-    }
-
-    return { valid: true };
-  };
-
-  // Get all scenarios that can be validly added
-  const getAddableScenarios = (): { scenario: Scenario; reason?: string }[] => {
-    const position = workflow.steps.length;
-    return state.scenarios.map((sc) => {
-      const result = canAddScenarioAt(sc.id, position);
-      return { scenario: sc, reason: result.valid ? undefined : result.reason };
-    });
-  };
-
-  const addStep = (scenarioId: string) => {
-    const newStep: WorkflowStep = {
-      scenarioId,
-      order: workflow.steps.length,
-    };
-    onUpdate({ steps: [...workflow.steps, newStep] });
-  };
-
-  const removeStep = (index: number) => {
-    const newSteps = workflow.steps
-      .filter((_, i) => i !== index)
-      .map((s, i) => ({ ...s, order: i }));
-    onUpdate({ steps: newSteps });
-  };
-
-  const moveStep = (index: number, direction: "up" | "down") => {
-    const newSteps = [...workflow.steps];
-    const swapIdx = direction === "up" ? index - 1 : index + 1;
-    if (swapIdx < 0 || swapIdx >= newSteps.length) return;
-    [newSteps[index], newSteps[swapIdx]] = [newSteps[swapIdx], newSteps[index]];
-    const reordered = newSteps.map((s, i) => ({ ...s, order: i }));
-
-    // Validate the new ordering
-    const valid = validateWorkflow(reordered);
-    if (!valid.valid) return; // Don't allow invalid reordering
-    onUpdate({ steps: reordered });
-  };
-
-  const validateWorkflow = (
-    steps: WorkflowStep[]
-  ): { valid: boolean; errors: string[] } => {
-    const errors: string[] = [];
-    const seenCategories = new Set<string>();
-    const availableOutputs: string[] = [];
-
-    for (let i = 0; i < steps.length; i++) {
-      const sc = getScenario(steps[i].scenarioId);
-      if (!sc) continue;
-
-      if (seenCategories.has(sc.categoryId)) {
-        const cat = getCategory(sc.categoryId);
-        errors.push(
-          `Step ${i + 1}: Duplicate category "${cat?.name}"`
-        );
-      }
-      seenCategories.add(sc.categoryId);
-
-      if (i > 0) {
-        const unsatisfied = sc.inputs.filter(
-          (inp) => !availableOutputs.includes(inp)
-        );
-        if (unsatisfied.length > 0) {
-          const names = unsatisfied
-            .map((id) => getDataType(id)?.name || "?")
-            .join(", ");
-          errors.push(
-            `Step ${i + 1} ("${sc.name}"): Missing inputs: ${names}`
-          );
-        }
-      }
-
-      availableOutputs.push(...sc.outputs);
-    }
-
-    return { valid: errors.length === 0, errors };
-  };
-
-  const validation = validateWorkflow(workflow.steps);
-  const addable = getAddableScenarios();
-
-  const handleExport = async () => {
-    if (!validation.valid) return;
-    setExportStatus("Saving...");
-    await onExport();
-    setExportStatus("Saved!");
-    setTimeout(() => setExportStatus(""), 2000);
-  };
-
-  return (
-    <div className="bg-white rounded-lg border border-zinc-200 p-6 mb-4">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h3 className="text-md font-semibold text-zinc-800">
+    <div className="bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200">
             {workflow.name}
           </h3>
-          {!validation.valid && (
-            <span className="text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded-full">
-              Invalid
-            </span>
-          )}
-          {validation.valid && workflow.steps.length > 0 && (
-            <span className="text-xs px-2 py-0.5 bg-green-50 text-green-600 rounded-full">
-              Valid
-            </span>
+          {workflow.steps.length > 0 && (
+            isValid ? (
+              <span className="text-[10px] px-2 py-0.5 bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 rounded-full font-medium">
+                Valid
+              </span>
+            ) : (
+              <span className="text-[10px] px-2 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-full font-medium">
+                Invalid
+              </span>
+            )
           )}
         </div>
         <div className="flex gap-2 items-center">
-          {exportStatus && (
-            <span className="text-xs text-green-600">{exportStatus}</span>
-          )}
           <button
             onClick={handleExport}
-            disabled={!validation.valid || workflow.steps.length === 0}
+            disabled={!isValid || workflow.steps.length === 0}
             className="px-3 py-1.5 text-xs font-medium bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 transition-colors"
           >
             Save to Disk
           </button>
           <button
-            onClick={onToggleEdit}
-            className="px-3 py-1.5 text-xs font-medium bg-zinc-100 text-zinc-700 rounded-md hover:bg-zinc-200 transition-colors"
+            onClick={() => setEditing(!editing)}
+            className="px-3 py-1.5 text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
           >
-            {isEditing ? "Done" : "Edit"}
+            {editing ? "Done" : "Edit"}
           </button>
           <button
-            onClick={onDelete}
-            className="px-3 py-1.5 text-xs font-medium bg-red-50 text-red-600 rounded-md hover:bg-red-100 transition-colors"
+            onClick={() => removeWorkflow(workflow.id)}
+            className="px-3 py-1.5 text-xs font-medium bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-md hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
           >
             Delete
           </button>
         </div>
       </div>
 
-      {/* Validation errors */}
-      {!validation.valid && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-          <p className="text-xs font-medium text-red-700 mb-1">
-            Validation Issues:
-          </p>
-          {validation.errors.map((err, i) => (
-            <p key={i} className="text-xs text-red-600">
-              {err}
-            </p>
+      {errors.length > 0 && (
+        <div className="mb-3 p-2.5 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-md">
+          {errors.map((err, i) => (
+            <p key={i} className="text-xs text-red-600 dark:text-red-400">{err}</p>
           ))}
         </div>
       )}
 
-      {/* Steps visualization */}
       {workflow.steps.length === 0 ? (
-        <p className="text-sm text-zinc-400 text-center py-4 mb-4">
-          No steps yet. Add scenarios below.
+        <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-3">
+          No steps yet. Click Edit to add scenarios.
         </p>
       ) : (
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          {workflow.steps.map((step, idx) => {
-            const sc = getScenario(step.scenarioId);
-            const cat = sc ? getCategory(sc.categoryId) : null;
-            if (!sc) return null;
-            return (
-              <div key={idx} className="flex items-center gap-2">
-                {idx > 0 && (
-                  <span className="text-zinc-300 text-lg">&rarr;</span>
-                )}
-                <div className="border border-zinc-200 rounded-lg px-3 py-2 bg-zinc-50 relative group">
-                  <div className="text-xs text-zinc-500 mb-0.5">
-                    {cat?.name}
-                  </div>
-                  <div className="text-sm font-medium text-zinc-800">
-                    {sc.name}
-                  </div>
-                  <div className="flex gap-3 mt-1">
-                    <div className="flex flex-wrap gap-0.5">
-                      {sc.inputs.map((id) => {
-                        const dt = getDataType(id);
-                        return dt ? (
-                          <span
-                            key={id}
-                            className="text-[10px] px-1.5 py-0.5 rounded-full text-white"
-                            style={{ backgroundColor: dt.color }}
-                          >
-                            {dt.name}
-                          </span>
-                        ) : null;
-                      })}
+        <>
+          {/* Process Map */}
+          <ProcessMap steps={workflow.steps} getScenario={getScenario} getCategory={getCategory} />
+
+          {/* Compact step list with edit controls */}
+          {editing && (
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              {workflow.steps.map((step, idx) => {
+                const sc = getScenario(step.scenarioId);
+                const cat = sc ? getCategory(sc.categoryId) : null;
+                if (!sc) return null;
+                return (
+                  <div key={idx} className="flex items-center gap-2">
+                    {idx > 0 && (
+                      <span className="text-zinc-300 dark:text-zinc-600 text-lg">&rarr;</span>
+                    )}
+                    <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 bg-zinc-50 dark:bg-zinc-800 relative group">
+                      <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                        {cat?.name}
+                      </div>
+                      <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                        {sc.name}
+                      </div>
+                      <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => moveWorkflowStep(workflow.id, idx, "up")}
+                          disabled={idx === 0}
+                          className="w-5 h-5 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded text-xs hover:bg-zinc-300 dark:hover:bg-zinc-600 disabled:opacity-30"
+                        >
+                          &larr;
+                        </button>
+                        <button
+                          onClick={() => moveWorkflowStep(workflow.id, idx, "down")}
+                          disabled={idx === workflow.steps.length - 1}
+                          className="w-5 h-5 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded text-xs hover:bg-zinc-300 dark:hover:bg-zinc-600 disabled:opacity-30"
+                        >
+                          &rarr;
+                        </button>
+                        <button
+                          onClick={() => removeWorkflowStep(workflow.id, idx)}
+                          className="w-5 h-5 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 rounded text-xs hover:bg-red-200 dark:hover:bg-red-500/30"
+                        >
+                          x
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-zinc-300 text-xs">&rarr;</span>
-                    <div className="flex flex-wrap gap-0.5">
-                      {sc.outputs.map((id) => {
-                        const dt = getDataType(id);
-                        return dt ? (
-                          <span
-                            key={id}
-                            className="text-[10px] px-1.5 py-0.5 rounded-full text-white"
-                            style={{ backgroundColor: dt.color }}
-                          >
-                            {dt.name}
-                          </span>
-                        ) : null;
-                      })}
-                    </div>
                   </div>
-                  {isEditing && (
-                    <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => moveStep(idx, "up")}
-                        disabled={idx === 0}
-                        className="w-5 h-5 bg-zinc-200 text-zinc-600 rounded text-xs hover:bg-zinc-300 disabled:opacity-30"
-                      >
-                        &larr;
-                      </button>
-                      <button
-                        onClick={() => moveStep(idx, "down")}
-                        disabled={idx === workflow.steps.length - 1}
-                        className="w-5 h-5 bg-zinc-200 text-zinc-600 rounded text-xs hover:bg-zinc-300 disabled:opacity-30"
-                      >
-                        &rarr;
-                      </button>
-                      <button
-                        onClick={() => removeStep(idx)}
-                        className="w-5 h-5 bg-red-100 text-red-600 rounded text-xs hover:bg-red-200"
-                      >
-                        x
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
-      {/* Add scenario controls */}
-      {isEditing && (
-        <div className="border-t border-zinc-100 pt-4">
-          <p className="text-xs font-medium text-zinc-600 mb-2">
+      {editing && (
+        <div className="border-t border-zinc-100 dark:border-zinc-800 pt-3">
+          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
             Add Scenario:
           </p>
           <div className="flex flex-wrap gap-2">
@@ -1030,35 +680,178 @@ function WorkflowCard({
               return (
                 <button
                   key={scenario.id}
-                  onClick={() => !reason && addStep(scenario.id)}
+                  onClick={() => !reason && addWorkflowStep(workflow.id, scenario.id)}
                   disabled={!!reason}
-                  title={reason || `Add "${scenario.name}" to workflow`}
-                  className={`px-3 py-2 rounded-md text-xs border transition-colors ${
+                  title={reason || `Add "${scenario.name}"`}
+                  className={`px-3 py-2 rounded-md text-xs border transition-colors text-left ${
                     reason
-                      ? "border-zinc-200 bg-zinc-50 text-zinc-400 cursor-not-allowed"
-                      : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer"
+                      ? "border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-400 dark:text-zinc-500 cursor-not-allowed"
+                      : "border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 cursor-pointer"
                   }`}
                 >
-                  <span className="text-[10px] text-zinc-400 block">
+                  <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block">
                     {cat?.name}
                   </span>
                   {scenario.name}
                   {reason && (
-                    <span className="block text-[10px] text-red-400 mt-0.5">
+                    <span className="block text-[10px] text-red-400 dark:text-red-500 mt-0.5">
                       {reason}
                     </span>
                   )}
                 </button>
               );
             })}
-            {state.scenarios.length === 0 && (
-              <span className="text-xs text-zinc-400">
-                Create scenarios first in the Categories & Scenarios tab.
+            {scenarios.length === 0 && (
+              <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                Create scenarios first above.
               </span>
             )}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Process Map Visualization ───────────────────────────────────────────────
+
+function ProcessMap({
+  steps,
+  getScenario,
+  getCategory,
+}: {
+  steps: { scenarioId: string; order: number }[];
+  getScenario: (id: string) => Scenario | undefined;
+  getCategory: (id: string) => { id: string; name: string } | undefined;
+}) {
+  const flow: {
+    scenario: Scenario;
+    category: { id: string; name: string } | undefined;
+    externalInputs: string[];
+    chainedInputs: string[];
+    outputs: string[];
+  }[] = [];
+
+  const availableOutputs = new Set<string>();
+
+  for (const step of steps) {
+    const sc = getScenario(step.scenarioId);
+    if (!sc) continue;
+    const cat = getCategory(sc.categoryId);
+
+    const externalInputs = sc.inputs.filter((inp) => !availableOutputs.has(inp));
+    const chainedInputs = sc.inputs.filter((inp) => availableOutputs.has(inp));
+
+    flow.push({
+      scenario: sc,
+      category: cat,
+      externalInputs,
+      chainedInputs,
+      outputs: sc.outputs,
+    });
+
+    for (const o of sc.outputs) availableOutputs.add(o);
+  }
+
+  if (flow.length === 0) return null;
+
+  return (
+    <div className="mb-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-x-auto">
+      <div className="flex items-center gap-0 min-w-max">
+        {flow.map((node, idx) => (
+          <div key={idx} className="flex items-center">
+            {/* External inputs */}
+            {node.externalInputs.length > 0 && (
+              <>
+                <div className="flex flex-col items-center justify-center gap-1 px-3">
+                  {node.externalInputs.map((name) => (
+                    <div
+                      key={name}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-dashed border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900"
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: colorFor(name) }}
+                      />
+                      <span className="text-[11px] text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
+                        {name}
+                      </span>
+                    </div>
+                  ))}
+                  <span className="text-[9px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mt-0.5">
+                    External
+                  </span>
+                </div>
+                <div className="flex items-center px-1">
+                  <svg width="24" height="24" viewBox="0 0 24 24" className="text-zinc-300 dark:text-zinc-600">
+                    <path d="M5 12h14M14 7l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+              </>
+            )}
+
+            {/* Chained data arrow between steps */}
+            {idx > 0 && (
+              <div className="flex flex-col items-center justify-center px-1">
+                <div className="flex flex-col items-center gap-0.5 mb-1">
+                  {node.chainedInputs.map((name) => (
+                    <span
+                      key={name}
+                      className="text-[9px] px-1.5 py-0.5 rounded-full text-white whitespace-nowrap"
+                      style={{ backgroundColor: colorFor(name) }}
+                    >
+                      {name}
+                    </span>
+                  ))}
+                </div>
+                <svg width="32" height="24" viewBox="0 0 32 24" className="text-zinc-300 dark:text-zinc-600">
+                  <path d="M2 12h28M24 7l6 5-6 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+            )}
+
+            {/* Process box */}
+            <div className="border-2 border-blue-400 dark:border-blue-500 rounded-lg px-5 py-3 bg-white dark:bg-zinc-900 min-w-[120px] text-center">
+              <div className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-0.5">
+                {node.category?.name}
+              </div>
+              <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                {node.scenario.name}
+              </div>
+            </div>
+
+            {/* Final outputs at end of flow */}
+            {idx === flow.length - 1 && node.outputs.length > 0 && (
+              <>
+                <div className="flex items-center px-1">
+                  <svg width="24" height="24" viewBox="0 0 24 24" className="text-zinc-300 dark:text-zinc-600">
+                    <path d="M5 12h14M14 7l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+                <div className="flex flex-col items-center justify-center gap-1 px-3">
+                  {node.outputs.map((name) => (
+                    <div
+                      key={name}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-dashed border-green-300 dark:border-green-600 bg-green-50 dark:bg-green-500/5"
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: colorFor(name) }}
+                      />
+                      <span className="text-[11px] text-green-700 dark:text-green-400 whitespace-nowrap">
+                        {name}
+                      </span>
+                    </div>
+                  ))}
+                  <span className="text-[9px] uppercase tracking-wider text-green-500 dark:text-green-500 mt-0.5">
+                    Final Output
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

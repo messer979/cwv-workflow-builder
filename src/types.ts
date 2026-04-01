@@ -8,8 +8,8 @@ export interface Scenario {
   id: string;
   name: string;
   categoryId: string;
-  inputs: string[];   // DataType IDs
-  outputs: string[];  // DataType IDs
+  inputs: string[];   // free-text data type names
+  outputs: string[];  // free-text data type names
 }
 
 export interface Category {
