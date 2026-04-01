@@ -3,12 +3,38 @@
 import { useState, useRef, useEffect } from "react";
 import { useStore } from "@/store";
 import type { Scenario } from "@/types";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardAction,
+  CardContent,
+} from "@/components/ui/card";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 // ─── Color assignment for data type badges ───────────────────────────────────
 
 const BADGE_COLORS = [
-  "#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6",
-  "#ec4899", "#06b6d4", "#f97316", "#14b8a6", "#6366f1",
+  "#1d4ed8", "#b91c1c", "#047857", "#92400e", "#6d28d9",
+  "#be185d", "#0e7490", "#c2410c", "#0f766e", "#4338ca",
 ];
 
 const colorMap = new Map<string, string>();
@@ -24,28 +50,25 @@ function colorFor(name: string): string {
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const store = useStore();
-  const [mounted, setMounted] = useState(false);
+  const hydrated = useStore((s) => s._hydrated);
+  const hydrate = useStore((s) => s.hydrate);
+  useEffect(() => { hydrate(); }, [hydrate]);
 
-  useEffect(() => setMounted(true), []);
-
-  if (!mounted) {
+  if (!hydrated) {
     return (
-      <div className="flex items-center justify-center h-screen bg-white dark:bg-zinc-950">
-        <p className="text-zinc-500 dark:text-zinc-400">Loading...</p>
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-muted-foreground">Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <header className="sticky top-0 z-10 border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/80 backdrop-blur px-6 py-4">
-        <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-          Warehouse Workflow Builder
-        </h1>
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur px-6 py-3">
+        <h1 className="text-lg font-bold">Warehouse Workflow Builder</h1>
       </header>
 
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-10">
+      <div className="px-6 py-6 space-y-8">
         <CategoriesAndScenarios />
         <WorkflowsSection />
       </div>
@@ -56,8 +79,13 @@ export default function Home() {
 // ─── Categories & Scenarios ──────────────────────────────────────────────────
 
 function CategoriesAndScenarios() {
-  const { categories, scenarios, addCategory, removeCategory } = useStore();
+  const { categories, addCategory, reorderCategories } = useStore();
   const [catName, setCatName] = useState("");
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const handleAdd = () => {
     const trimmed = catName.trim();
@@ -66,92 +94,141 @@ function CategoriesAndScenarios() {
     setCatName("");
   };
 
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = categories.findIndex((c) => c.id === active.id);
+    const newIndex = categories.findIndex((c) => c.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const ids = categories.map((c) => c.id);
+    ids.splice(oldIndex, 1);
+    ids.splice(newIndex, 0, active.id as string);
+    reorderCategories(ids);
+  };
+
   return (
     <section>
-      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
-        Categories & Scenarios
-      </h2>
-      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
-        Scenarios in the same category are alternate flavors &mdash; only one per category can exist in a workflow.
-      </p>
-
-      <div className="flex gap-2 mb-6">
-        <input
-          type="text"
-          value={catName}
-          onChange={(e) => setCatName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-          placeholder="New category name..."
-          className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md text-sm bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          onClick={handleAdd}
-          className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors"
-        >
-          Add Category
-        </button>
+      <div className="flex items-center gap-3 mb-4">
+        <h2 className="text-base font-semibold">Categories & Scenarios</h2>
+        <div className="flex gap-2 flex-1">
+          <Input
+            value={catName}
+            onChange={(e) => setCatName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+            placeholder="New category..."
+            className="max-w-[200px] h-7 text-xs"
+          />
+          <Button onClick={handleAdd} size="sm" className="h-7 text-xs">
+            Add
+          </Button>
+        </div>
       </div>
 
-      {categories.length === 0 && (
-        <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-6">
-          No categories yet. Add one above to get started.
+      {categories.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-4">
+          No categories yet.
         </p>
+      ) : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={categories.map((c) => c.id)} strategy={rectSortingStrategy}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {categories.map((cat) => (
+                <SortableCategoryCard key={cat.id} category={cat} />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        {categories.map((cat) => (
-          <CategoryCard key={cat.id} category={cat} />
-        ))}
-      </div>
     </section>
   );
 }
 
-function CategoryCard({ category }: { category: { id: string; name: string } }) {
+function SortableCategoryCard({ category }: { category: { id: string; name: string } }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: category.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <CategoryCard category={category} dragListeners={listeners} />
+    </div>
+  );
+}
+
+function CategoryCard({
+  category,
+  dragListeners,
+}: {
+  category: { id: string; name: string };
+  dragListeners?: Record<string, unknown>;
+}) {
   const { scenarios, removeCategory } = useStore();
   const [adding, setAdding] = useState(false);
   const catScenarios = scenarios.filter((s) => s.categoryId === category.id);
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold text-sm text-zinc-800 dark:text-zinc-200">
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle className="text-sm flex items-center gap-1.5">
+          <span
+            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+            {...dragListeners}
+          >
+            &#x2630;
+          </span>
           {category.name}
-        </h3>
-        <div className="flex gap-1">
-          <button
-            onClick={() => setAdding(true)}
-            className="px-2 py-1 text-[10px] font-medium bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
-          >
-            +
-          </button>
-          <button
-            onClick={() => removeCategory(category.id)}
-            className="px-2 py-1 text-[10px] font-medium bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
-          >
-            x
-          </button>
-        </div>
-      </div>
-
-      {catScenarios.length === 0 && !adding && (
-        <p className="text-xs text-zinc-400 dark:text-zinc-500 text-center py-2">
-          No scenarios yet.
-        </p>
-      )}
-
-      <div className="space-y-2">
-        {catScenarios.map((sc) => (
-          <ScenarioRow key={sc.id} scenario={sc} />
-        ))}
-        {adding && (
-          <NewScenarioForm
-            categoryId={category.id}
-            onDone={() => setAdding(false)}
-          />
+        </CardTitle>
+        <CardAction>
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-[10px]"
+              onClick={() => setAdding(true)}
+            >
+              +
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-[10px] text-destructive"
+              onClick={() => removeCategory(category.id)}
+            >
+              x
+            </Button>
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        {catScenarios.length === 0 && !adding && (
+          <p className="text-xs text-muted-foreground text-center py-1">
+            No scenarios yet.
+          </p>
         )}
-      </div>
-    </div>
+        <div className="space-y-2">
+          {catScenarios.map((sc) => (
+            <ScenarioRow key={sc.id} scenario={sc} />
+          ))}
+          {adding && (
+            <NewScenarioForm
+              categoryId={category.id}
+              onDone={() => setAdding(false)}
+            />
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -160,21 +237,27 @@ function ScenarioRow({ scenario }: { scenario: Scenario }) {
   const [editing, setEditing] = useState(false);
 
   return (
-    <div className="border border-zinc-200 dark:border-zinc-700 rounded p-2">
-      <div className="flex items-center justify-between mb-1">
-        <h4 className="font-medium text-xs text-zinc-800 dark:text-zinc-200">
-          {scenario.name}
-        </h4>
-        <div className="flex gap-1.5">
+    <div className="rounded-md border p-2 space-y-1.5">
+      <div className="flex items-center justify-between">
+        {editing ? (
+          <Input
+            value={scenario.name}
+            onChange={(e) => updateScenario(scenario.id, { name: e.target.value })}
+            className="h-6 text-xs font-medium w-auto flex-1 mr-2"
+          />
+        ) : (
+          <span className="text-xs font-medium">{scenario.name}</span>
+        )}
+        <div className="flex gap-1 shrink-0">
           <button
             onClick={() => setEditing(!editing)}
-            className="text-[10px] text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+            className="text-[10px] text-primary hover:underline"
           >
             {editing ? "Done" : "Edit"}
           </button>
           <button
             onClick={() => removeScenario(scenario.id)}
-            className="text-[10px] text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+            className="text-[10px] text-destructive hover:underline"
           >
             x
           </button>
@@ -182,45 +265,48 @@ function ScenarioRow({ scenario }: { scenario: Scenario }) {
       </div>
 
       <div className="flex items-center gap-1.5">
-        <div className="flex flex-wrap gap-0.5 flex-1">
+        <div className="flex flex-wrap gap-0.5 flex-1 min-w-0">
           {scenario.inputs.length === 0 ? (
-            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">No inputs</span>
+            <span className="text-[10px] text-muted-foreground">No inputs</span>
           ) : (
             scenario.inputs.map((name) => (
-              <Badge key={name} name={name} />
+              <DataBadge key={name} name={name} />
             ))
           )}
         </div>
-        <span className="text-zinc-300 dark:text-zinc-600 text-xs">&rarr;</span>
-        <div className="flex flex-wrap gap-0.5 flex-1">
+        <span className="text-muted-foreground text-base shrink-0">&rarr;</span>
+        <div className="flex flex-wrap gap-0.5 flex-1 min-w-0">
           {scenario.outputs.length === 0 ? (
-            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">No outputs</span>
+            <span className="text-[10px] text-muted-foreground">No outputs</span>
           ) : (
             scenario.outputs.map((name) => (
-              <Badge key={name} name={name} />
+              <DataBadge key={name} name={name} />
             ))
           )}
         </div>
       </div>
 
       {editing && (
-        <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-1.5">
+        <div className="pt-1.5 border-t space-y-1.5">
           <div>
-            <label className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400 mb-0.5 block">
-              Inputs
-            </label>
+            <label className="text-[10px] text-muted-foreground">Inputs</label>
             <TagInput
               values={scenario.inputs}
               onChange={(inputs) => updateScenario(scenario.id, { inputs })}
             />
           </div>
           <div>
-            <label className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400 mb-0.5 block">
-              Outputs
-            </label>
+            <label className="text-[10px] text-muted-foreground">Outputs</label>
             <TagInput
               values={scenario.outputs}
               onChange={(outputs) => updateScenario(scenario.id, { outputs })}
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground">Steps</label>
+            <StepsEditor
+              steps={scenario.steps ?? []}
+              onChange={(steps) => updateScenario(scenario.id, { steps })}
             />
           </div>
         </div>
@@ -240,53 +326,58 @@ function NewScenarioForm({
   const [name, setName] = useState("");
   const [inputs, setInputs] = useState<string[]>([]);
   const [outputs, setOutputs] = useState<string[]>([]);
+  const [steps, setSteps] = useState<string[]>([]);
 
   const save = () => {
     if (!name.trim()) return;
-    addScenario(name.trim(), categoryId, inputs, outputs);
+    addScenario(name.trim(), categoryId, inputs, outputs, steps);
     onDone();
   };
 
   return (
-    <div className="border border-dashed border-blue-300 dark:border-blue-700 rounded p-2.5 bg-blue-50/50 dark:bg-blue-500/5">
-      <input
-        type="text"
+    <div className="rounded-md border border-dashed border-primary/40 p-2.5 bg-primary/5 space-y-2">
+      <Input
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="Scenario name..."
-        className="w-full px-2 py-1.5 border border-zinc-300 dark:border-zinc-700 rounded text-xs mb-2 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="h-7 text-xs"
         autoFocus
       />
-      <div className="space-y-1.5 mb-2">
-        <div>
-          <label className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400 mb-0.5 block">
-            Inputs
-          </label>
-          <TagInput values={inputs} onChange={setInputs} />
-        </div>
-        <div>
-          <label className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400 mb-0.5 block">
-            Outputs
-          </label>
-          <TagInput values={outputs} onChange={setOutputs} />
-        </div>
+      <div>
+        <label className="text-[10px] text-muted-foreground">Inputs</label>
+        <TagInput values={inputs} onChange={setInputs} />
       </div>
-      <div className="flex gap-2 justify-end">
-        <button
-          onClick={onDone}
-          className="px-3 py-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
-        >
+      <div>
+        <label className="text-[10px] text-muted-foreground">Outputs</label>
+        <TagInput values={outputs} onChange={setOutputs} />
+      </div>
+      <div>
+        <label className="text-[10px] text-muted-foreground">Steps</label>
+        <StepsEditor steps={steps} onChange={setSteps} />
+      </div>
+      <div className="flex gap-1.5 justify-end">
+        <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={onDone}>
           Cancel
-        </button>
-        <button
-          onClick={save}
-          disabled={!name.trim()}
-          className="px-3 py-1.5 text-xs font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 transition-colors"
-        >
-          Save Scenario
-        </button>
+        </Button>
+        <Button size="sm" className="h-6 text-[10px]" onClick={save} disabled={!name.trim()}>
+          Save
+        </Button>
       </div>
     </div>
+  );
+}
+
+// ─── Data Badge ──────────────────────────────────────────────────────────────
+
+function DataBadge({ name }: { name: string }) {
+  return (
+    <Badge
+      variant="secondary"
+      className="h-5 px-2 text-[11px] font-semibold text-white border-0"
+      style={{ backgroundColor: colorFor(name) }}
+    >
+      {name}
+    </Badge>
   );
 }
 
@@ -345,21 +436,21 @@ function TagInput({
 
   return (
     <div ref={wrapperRef} className="relative">
-      <div className="flex flex-wrap gap-1 p-1.5 border border-zinc-300 dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 min-h-[36px]">
+      <div className="flex flex-wrap gap-1 p-1 rounded-md border bg-background min-h-[28px] items-center">
         {values.map((v) => (
-          <span
+          <Badge
             key={v}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-white"
+            className="h-5 px-2 text-[11px] font-semibold text-white gap-0.5 border-0"
             style={{ backgroundColor: colorFor(v) }}
           >
             {v}
             <button
               onClick={() => remove(v)}
-              className="text-white/70 hover:text-white"
+              className="text-white/70 hover:text-white ml-0.5"
             >
               x
             </button>
-          </span>
+          </Badge>
         ))}
         <input
           ref={inputRef}
@@ -371,21 +462,21 @@ function TagInput({
           }}
           onFocus={() => setShowSuggestions(true)}
           onKeyDown={handleKeyDown}
-          placeholder={values.length === 0 ? "Type and press Enter..." : ""}
-          className="flex-1 min-w-[100px] px-1 py-0.5 text-xs bg-transparent text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none"
+          placeholder={values.length === 0 ? "Type + Enter..." : ""}
+          className="flex-1 min-w-[80px] px-1 text-[11px] bg-transparent outline-none placeholder:text-muted-foreground"
         />
       </div>
 
       {showSuggestions && suggestions.length > 0 && (
-        <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md shadow-lg max-h-40 overflow-auto">
+        <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-32 overflow-auto">
           {suggestions.map((s) => (
             <button
               key={s}
               onClick={() => add(s)}
-              className="w-full text-left px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center gap-2"
+              className="w-full text-left px-2 py-1 text-[11px] hover:bg-accent transition-colors flex items-center gap-1.5"
             >
               <span
-                className="w-2 h-2 rounded-full"
+                className="w-1.5 h-1.5 rounded-full shrink-0"
                 style={{ backgroundColor: colorFor(s) }}
               />
               {s}
@@ -397,23 +488,94 @@ function TagInput({
   );
 }
 
-// ─── Badge ───────────────────────────────────────────────────────────────────
+// ─── Steps Editor ────────────────────────────────────────────────────────────
 
-function Badge({ name }: { name: string }) {
+function StepsEditor({
+  steps,
+  onChange,
+}: {
+  steps: string[];
+  onChange: (steps: string[]) => void;
+}) {
+  const [input, setInput] = useState("");
+
+  const add = () => {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    onChange([...steps, trimmed]);
+    setInput("");
+  };
+
+  const remove = (idx: number) => {
+    onChange(steps.filter((_, i) => i !== idx));
+  };
+
+  const move = (idx: number, dir: "up" | "down") => {
+    const swapIdx = dir === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= steps.length) return;
+    const next = [...steps];
+    [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+    onChange(next);
+  };
+
   return (
-    <span
-      className="inline-block px-1.5 py-0 rounded-full text-[10px] font-medium text-white leading-4"
-      style={{ backgroundColor: colorFor(name) }}
-    >
-      {name}
-    </span>
+    <div className="space-y-1">
+      {steps.length > 0 && (
+        <ol className="space-y-0.5">
+          {steps.map((step, idx) => (
+            <li key={idx} className="flex items-center gap-1 group">
+              <span className="text-[10px] text-muted-foreground w-4 text-right shrink-0">
+                {idx + 1}.
+              </span>
+              <span className="text-[11px] flex-1">{step}</span>
+              <div className="flex gap-px opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => move(idx, "up")}
+                  disabled={idx === 0}
+                  className="w-4 h-4 text-[9px] text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
+                  &uarr;
+                </button>
+                <button
+                  onClick={() => move(idx, "down")}
+                  disabled={idx === steps.length - 1}
+                  className="w-4 h-4 text-[9px] text-muted-foreground hover:text-foreground disabled:opacity-30"
+                >
+                  &darr;
+                </button>
+                <button
+                  onClick={() => remove(idx)}
+                  className="w-4 h-4 text-[9px] text-destructive hover:text-destructive/80"
+                >
+                  x
+                </button>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="flex gap-1">
+        <Input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+          placeholder="Add a step..."
+          className="h-6 text-[11px] flex-1"
+        />
+        <Button variant="outline" size="sm" className="h-6 text-[10px] px-2" onClick={add} disabled={!input.trim()}>
+          Add
+        </Button>
+      </div>
+    </div>
   );
 }
 
 // ─── Workflows Section ───────────────────────────────────────────────────────
 
+import type { Workflow, WorkflowNode, WorkflowEdge } from "@/types";
+
 function WorkflowsSection() {
-  const { workflows, scenarios, categories, addWorkflow } = useStore();
+  const { workflows, addWorkflow } = useStore();
   const [newName, setNewName] = useState("");
 
   const handleCreate = () => {
@@ -424,109 +586,182 @@ function WorkflowsSection() {
 
   return (
     <section>
-      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
-        Workflows
-      </h2>
-      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
-        Chain scenarios together. Each step&apos;s inputs must be satisfied by previous step outputs.
-      </p>
-
-      <div className="flex gap-2 mb-6">
-        <input
-          type="text"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-          placeholder="Workflow name..."
-          className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-md text-sm bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          onClick={handleCreate}
-          className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 transition-colors"
-        >
-          Create Workflow
-        </button>
+      <div className="flex items-center gap-3 mb-4">
+        <h2 className="text-base font-semibold">Workflows</h2>
+        <div className="flex gap-2 flex-1">
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+            placeholder="Workflow name..."
+            className="max-w-[200px] h-7 text-xs"
+          />
+          <Button onClick={handleCreate} size="sm" className="h-7 text-xs">
+            Create
+          </Button>
+        </div>
       </div>
 
-      {workflows.length === 0 && (
-        <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-6">
+      {workflows.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-4">
           No workflows yet.
         </p>
+      ) : (
+        <div className="space-y-3">
+          {workflows.map((wf) => (
+            <WorkflowCard key={wf.id} workflow={wf} />
+          ))}
+        </div>
       )}
-
-      <div className="space-y-4">
-        {workflows.map((wf) => (
-          <WorkflowCard key={wf.id} workflow={wf} />
-        ))}
-      </div>
     </section>
   );
 }
 
-function WorkflowCard({ workflow }: { workflow: { id: string; name: string; steps: { scenarioId: string; order: number }[] } }) {
+// ─── Graph helpers ───────────────────────────────────────────────────────────
+
+function buildLayers(
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+  getScenario: (id: string) => Scenario | undefined,
+): WorkflowNode[][] {
+  if (nodes.length === 0) return [];
+
+  // Find root nodes (no incoming edges)
+  const hasIncoming = new Set(edges.map((e) => e.to));
+  const roots = nodes.filter((n) => !hasIncoming.has(n.id));
+
+  // BFS layering
+  const layers: WorkflowNode[][] = [];
+  const visited = new Set<string>();
+  let current = roots.length > 0 ? roots : [nodes[0]];
+
+  while (current.length > 0) {
+    layers.push(current);
+    current.forEach((n) => visited.add(n.id));
+    const next: WorkflowNode[] = [];
+    for (const node of current) {
+      const children = edges
+        .filter((e) => e.from === node.id)
+        .map((e) => nodes.find((n) => n.id === e.to))
+        .filter((n): n is WorkflowNode => n != null && !visited.has(n.id));
+      for (const c of children) {
+        if (!next.some((x) => x.id === c.id)) next.push(c);
+      }
+    }
+    current = next;
+  }
+
+  // Add orphans (no edges) that weren't visited
+  const orphans = nodes.filter((n) => !visited.has(n.id));
+  if (orphans.length > 0) layers.push(orphans);
+
+  return layers;
+}
+
+function validateGraph(
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+  getScenario: (id: string) => Scenario | undefined,
+  getCategory: (id: string) => { id: string; name: string } | undefined,
+): string[] {
+  const errors: string[] = [];
+  const seenCategories = new Map<string, string>(); // categoryId -> node name
+
+  for (const node of nodes) {
+    const sc = getScenario(node.scenarioId);
+    if (!sc) continue;
+
+    // Duplicate category check
+    if (seenCategories.has(sc.categoryId)) {
+      const cat = getCategory(sc.categoryId);
+      errors.push(`Duplicate category "${cat?.name}": "${seenCategories.get(sc.categoryId)}" and "${sc.name}"`);
+    }
+    seenCategories.set(sc.categoryId, sc.name);
+
+    // Input satisfaction: gather outputs from all predecessors
+    const predecessorIds = edges.filter((e) => e.to === node.id).map((e) => e.from);
+    if (predecessorIds.length === 0 && edges.some((e) => e.from === node.id || e.to === node.id)) {
+      // Root node in a connected graph — external inputs are fine
+      continue;
+    }
+    if (predecessorIds.length === 0) continue; // Isolated node
+
+    const available = new Set<string>();
+    const visited = new Set<string>();
+    const queue = [...predecessorIds];
+    while (queue.length > 0) {
+      const pid = queue.shift()!;
+      if (visited.has(pid)) continue;
+      visited.add(pid);
+      const psc = getScenario(nodes.find((n) => n.id === pid)?.scenarioId ?? "");
+      if (psc) psc.outputs.forEach((o) => available.add(o));
+      // Also traverse further ancestors
+      edges.filter((e) => e.to === pid).forEach((e) => queue.push(e.from));
+    }
+
+    const missing = sc.inputs.filter((inp) => !available.has(inp));
+    if (missing.length > 0) {
+      errors.push(`"${sc.name}": Missing inputs from predecessors: ${missing.join(", ")}`);
+    }
+  }
+
+  return errors;
+}
+
+function getAvailableOutputs(
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+  getScenario: (id: string) => Scenario | undefined,
+): Set<string> {
+  const all = new Set<string>();
+  for (const n of nodes) {
+    const sc = getScenario(n.scenarioId);
+    if (sc) sc.outputs.forEach((o) => all.add(o));
+  }
+  return all;
+}
+
+// ─── Workflow Card ───────────────────────────────────────────────────────────
+
+function WorkflowCard({ workflow }: { workflow: Workflow }) {
   const {
     scenarios,
     categories,
     removeWorkflow,
-    addWorkflowStep,
-    removeWorkflowStep,
-    moveWorkflowStep,
+    addWorkflowNode,
+    removeWorkflowNode,
+    addWorkflowEdge,
+    removeWorkflowEdge,
   } = useStore();
   const [editing, setEditing] = useState(false);
+  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+
+  const nodes = workflow.nodes ?? [];
+  const edges = workflow.edges ?? [];
 
   const getScenario = (id: string) => scenarios.find((s) => s.id === id);
   const getCategory = (id: string) => categories.find((c) => c.id === id);
 
-  // Validate the workflow
-  const validate = () => {
-    const errors: string[] = [];
-    const seenCategories = new Set<string>();
-    const available = new Set<string>();
+  const errors = validateGraph(nodes, edges, getScenario, getCategory);
+  const isValid = errors.length === 0;
+  const layers = buildLayers(nodes, edges, getScenario);
 
-    for (let i = 0; i < workflow.steps.length; i++) {
-      const sc = getScenario(workflow.steps[i].scenarioId);
-      if (!sc) continue;
+  // Which scenarios can be added
+  const usedCategoryIds = new Set(
+    nodes.map((n) => getScenario(n.scenarioId)?.categoryId).filter(Boolean) as string[]
+  );
+  const available = getAvailableOutputs(nodes, edges, getScenario);
 
-      if (seenCategories.has(sc.categoryId)) {
-        const cat = getCategory(sc.categoryId);
-        errors.push(`Step ${i + 1}: Duplicate category "${cat?.name}"`);
-      }
-      seenCategories.add(sc.categoryId);
-
-      if (i > 0) {
-        const missing = sc.inputs.filter((inp) => !available.has(inp));
-        if (missing.length > 0) {
-          errors.push(`Step ${i + 1} ("${sc.name}"): Missing inputs: ${missing.join(", ")}`);
-        }
-      }
-
-      for (const o of sc.outputs) available.add(o);
-    }
-
-    return errors;
-  };
-
-  // Which scenarios can be added next
   const getAddable = () => {
-    const usedCategoryIds = new Set(
-      workflow.steps
-        .map((st) => getScenario(st.scenarioId)?.categoryId)
-        .filter(Boolean) as string[]
-    );
-
-    const available = new Set<string>();
-    for (const st of workflow.steps) {
-      const sc = getScenario(st.scenarioId);
-      if (sc) for (const o of sc.outputs) available.add(o);
-    }
-
     return scenarios.map((sc) => {
       if (usedCategoryIds.has(sc.categoryId)) {
-        return { scenario: sc, reason: `Already has "${getCategory(sc.categoryId)?.name}" category` };
+        return { scenario: sc, reason: `Already has "${getCategory(sc.categoryId)?.name}"` };
       }
-      if (workflow.steps.length > 0) {
+      if (nodes.length > 0) {
         const missing = sc.inputs.filter((inp) => !available.has(inp));
-        if (missing.length > 0) {
+        // Allow adding if at least some inputs could be satisfied, or if it's a root
+        const hasNoIncomingNeeds = sc.inputs.length === 0;
+        if (missing.length > 0 && !hasNoIncomingNeeds) {
           return { scenario: sc, reason: `Missing: ${missing.join(", ")}` };
         }
       }
@@ -534,324 +769,364 @@ function WorkflowCard({ workflow }: { workflow: { id: string; name: string; step
     });
   };
 
-  const errors = validate();
-  const isValid = errors.length === 0;
   const addable = getAddable();
 
-  const handleExport = async () => {
-    const enriched = {
-      ...workflow,
-      steps: workflow.steps.map((st) => {
-        const sc = getScenario(st.scenarioId);
-        const cat = sc ? getCategory(sc.categoryId) : null;
-        return {
-          ...st,
-          scenarioName: sc?.name,
-          categoryName: cat?.name,
-          inputs: sc?.inputs,
-          outputs: sc?.outputs,
-        };
-      }),
-    };
-    await fetch("/api/workflows", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(enriched),
-    });
+  const handleAddNode = (scenarioId: string) => {
+    const nodeId = addWorkflowNode(workflow.id, scenarioId);
+    // Auto-connect: find nodes whose outputs satisfy this scenario's inputs
+    const sc = getScenario(scenarioId);
+    if (sc && nodes.length > 0) {
+      for (const existing of nodes) {
+        const esc = getScenario(existing.scenarioId);
+        if (esc && sc.inputs.some((inp) => esc.outputs.includes(inp))) {
+          addWorkflowEdge(workflow.id, existing.id, nodeId);
+        }
+      }
+    }
+  };
+
+  const handleNodeClick = (nodeId: string) => {
+    if (!editing) return;
+    if (connectFrom === null) {
+      setConnectFrom(nodeId);
+    } else if (connectFrom === nodeId) {
+      setConnectFrom(null);
+    } else {
+      // Check if edge already exists
+      const exists = edges.some((e) => e.from === connectFrom && e.to === nodeId);
+      if (exists) {
+        removeWorkflowEdge(workflow.id, connectFrom, nodeId);
+      } else {
+        addWorkflowEdge(workflow.id, connectFrom, nodeId);
+      }
+      setConnectFrom(null);
+    }
   };
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 p-5">
-      <div className="flex items-center justify-between mb-3">
+    <Card size="sm">
+      <CardHeader>
         <div className="flex items-center gap-2">
-          <h3 className="font-semibold text-zinc-800 dark:text-zinc-200">
-            {workflow.name}
-          </h3>
-          {workflow.steps.length > 0 && (
-            isValid ? (
-              <span className="text-[10px] px-2 py-0.5 bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 rounded-full font-medium">
-                Valid
-              </span>
-            ) : (
-              <span className="text-[10px] px-2 py-0.5 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-full font-medium">
-                Invalid
-              </span>
-            )
+          <CardTitle className="text-sm">{workflow.name}</CardTitle>
+          {nodes.length > 0 && (
+            <Badge variant={isValid ? "secondary" : "destructive"} className="h-4 text-[9px]">
+              {isValid ? "Valid" : "Invalid"}
+            </Badge>
           )}
         </div>
-        <div className="flex gap-2 items-center">
-          <button
-            onClick={handleExport}
-            disabled={!isValid || workflow.steps.length === 0}
-            className="px-3 py-1.5 text-xs font-medium bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 transition-colors"
-          >
-            Save to Disk
-          </button>
-          <button
-            onClick={() => setEditing(!editing)}
-            className="px-3 py-1.5 text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-          >
-            {editing ? "Done" : "Edit"}
-          </button>
-          <button
-            onClick={() => removeWorkflow(workflow.id)}
-            className="px-3 py-1.5 text-xs font-medium bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-md hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
+        <CardAction>
+          <div className="flex gap-1">
+            <Button
+              variant={editing ? "default" : "outline"}
+              size="sm"
+              className="h-6 text-[10px]"
+              onClick={() => { setEditing(!editing); setConnectFrom(null); }}
+            >
+              {editing ? "Done" : "Edit"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1.5 text-[10px] text-destructive"
+              onClick={() => removeWorkflow(workflow.id)}
+            >
+              x
+            </Button>
+          </div>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        {errors.length > 0 && (
+          <div className="mb-3 p-2 rounded-md bg-destructive/10 text-destructive text-[11px]">
+            {errors.map((err, i) => (
+              <p key={i}>{err}</p>
+            ))}
+          </div>
+        )}
 
-      {errors.length > 0 && (
-        <div className="mb-3 p-2.5 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-md">
-          {errors.map((err, i) => (
-            <p key={i} className="text-xs text-red-600 dark:text-red-400">{err}</p>
-          ))}
-        </div>
-      )}
+        {nodes.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-2">
+            No steps yet. Click Edit to add scenarios.
+          </p>
+        ) : (
+          <GraphMap
+            nodes={nodes}
+            edges={edges}
+            layers={layers}
+            getScenario={getScenario}
+            getCategory={getCategory}
+            editing={editing}
+            connectFrom={connectFrom}
+            onNodeClick={handleNodeClick}
+            onRemoveNode={(nodeId) => removeWorkflowNode(workflow.id, nodeId)}
+          />
+        )}
 
-      {workflow.steps.length === 0 ? (
-        <p className="text-sm text-zinc-400 dark:text-zinc-500 text-center py-3">
-          No steps yet. Click Edit to add scenarios.
-        </p>
-      ) : (
-        <>
-          {/* Process Map */}
-          <ProcessMap steps={workflow.steps} getScenario={getScenario} getCategory={getCategory} />
+        {editing && connectFrom && (
+          <div className="mb-2 p-2 rounded-md bg-primary/10 text-primary text-[11px]">
+            Click another node to connect from &quot;{getScenario(nodes.find((n) => n.id === connectFrom)?.scenarioId ?? "")?.name}&quot;.
+            <button onClick={() => setConnectFrom(null)} className="ml-2 underline">Cancel</button>
+          </div>
+        )}
 
-          {/* Compact step list with edit controls */}
-          {editing && (
-            <div className="flex flex-wrap items-center gap-2 mb-3">
-              {workflow.steps.map((step, idx) => {
-                const sc = getScenario(step.scenarioId);
-                const cat = sc ? getCategory(sc.categoryId) : null;
-                if (!sc) return null;
+        {editing && (
+          <div className="border-t pt-2">
+            <p className="text-[10px] font-medium text-muted-foreground mb-1.5">
+              Add Scenario:
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {addable.map(({ scenario, reason }) => {
+                const cat = getCategory(scenario.categoryId);
                 return (
-                  <div key={idx} className="flex items-center gap-2">
-                    {idx > 0 && (
-                      <span className="text-zinc-300 dark:text-zinc-600 text-lg">&rarr;</span>
+                  <button
+                    key={scenario.id}
+                    onClick={() => !reason && handleAddNode(scenario.id)}
+                    disabled={!!reason}
+                    title={reason || `Add "${scenario.name}"`}
+                    className={`px-2 py-1 rounded text-[10px] border text-left transition-colors ${
+                      reason
+                        ? "border-border bg-muted/30 text-muted-foreground cursor-not-allowed opacity-50"
+                        : "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 cursor-pointer"
+                    }`}
+                  >
+                    <span className="text-[9px] text-muted-foreground block">{cat?.name}</span>
+                    {scenario.name}
+                    {reason && (
+                      <span className="block text-[9px] text-destructive mt-0.5">{reason}</span>
                     )}
-                    <div className="border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 bg-zinc-50 dark:bg-zinc-800 relative group">
-                      <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                        {cat?.name}
-                      </div>
-                      <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                        {sc.name}
-                      </div>
-                      <div className="absolute -top-2 -right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => moveWorkflowStep(workflow.id, idx, "up")}
-                          disabled={idx === 0}
-                          className="w-5 h-5 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded text-xs hover:bg-zinc-300 dark:hover:bg-zinc-600 disabled:opacity-30"
-                        >
-                          &larr;
-                        </button>
-                        <button
-                          onClick={() => moveWorkflowStep(workflow.id, idx, "down")}
-                          disabled={idx === workflow.steps.length - 1}
-                          className="w-5 h-5 bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded text-xs hover:bg-zinc-300 dark:hover:bg-zinc-600 disabled:opacity-30"
-                        >
-                          &rarr;
-                        </button>
-                        <button
-                          onClick={() => removeWorkflowStep(workflow.id, idx)}
-                          className="w-5 h-5 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 rounded text-xs hover:bg-red-200 dark:hover:bg-red-500/30"
-                        >
-                          x
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  </button>
                 );
               })}
+              {scenarios.length === 0 && (
+                <span className="text-[10px] text-muted-foreground">
+                  Create scenarios first above.
+                </span>
+              )}
             </div>
-          )}
-        </>
-      )}
-
-      {editing && (
-        <div className="border-t border-zinc-100 dark:border-zinc-800 pt-3">
-          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-            Add Scenario:
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {addable.map(({ scenario, reason }) => {
-              const cat = getCategory(scenario.categoryId);
-              return (
-                <button
-                  key={scenario.id}
-                  onClick={() => !reason && addWorkflowStep(workflow.id, scenario.id)}
-                  disabled={!!reason}
-                  title={reason || `Add "${scenario.name}"`}
-                  className={`px-3 py-2 rounded-md text-xs border transition-colors text-left ${
-                    reason
-                      ? "border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-400 dark:text-zinc-500 cursor-not-allowed"
-                      : "border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 cursor-pointer"
-                  }`}
-                >
-                  <span className="text-[10px] text-zinc-400 dark:text-zinc-500 block">
-                    {cat?.name}
-                  </span>
-                  {scenario.name}
-                  {reason && (
-                    <span className="block text-[10px] text-red-400 dark:text-red-500 mt-0.5">
-                      {reason}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-            {scenarios.length === 0 && (
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                Create scenarios first above.
-              </span>
-            )}
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
-// ─── Process Map Visualization ───────────────────────────────────────────────
+// ─── Graph Map Visualization ─────────────────────────────────────────────────
 
-function ProcessMap({
-  steps,
+function GraphMap({
+  nodes,
+  edges,
+  layers,
   getScenario,
   getCategory,
+  editing,
+  connectFrom,
+  onNodeClick,
+  onRemoveNode,
 }: {
-  steps: { scenarioId: string; order: number }[];
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  layers: WorkflowNode[][];
   getScenario: (id: string) => Scenario | undefined;
   getCategory: (id: string) => { id: string; name: string } | undefined;
+  editing: boolean;
+  connectFrom: string | null;
+  onNodeClick: (nodeId: string) => void;
+  onRemoveNode: (nodeId: string) => void;
 }) {
-  const flow: {
-    scenario: Scenario;
-    category: { id: string; name: string } | undefined;
-    externalInputs: string[];
-    chainedInputs: string[];
-    outputs: string[];
-  }[] = [];
+  // Compute positions for each node
+  const NODE_W = 140;
+  const NODE_H = 60;
+  const GAP_X = 80;
+  const GAP_Y = 20;
 
-  const availableOutputs = new Set<string>();
+  const positions = new Map<string, { x: number; y: number }>();
 
-  for (const step of steps) {
-    const sc = getScenario(step.scenarioId);
-    if (!sc) continue;
-    const cat = getCategory(sc.categoryId);
-
-    const externalInputs = sc.inputs.filter((inp) => !availableOutputs.has(inp));
-    const chainedInputs = sc.inputs.filter((inp) => availableOutputs.has(inp));
-
-    flow.push({
-      scenario: sc,
-      category: cat,
-      externalInputs,
-      chainedInputs,
-      outputs: sc.outputs,
-    });
-
-    for (const o of sc.outputs) availableOutputs.add(o);
+  let x = 0;
+  for (const layer of layers) {
+    const totalH = layer.length * NODE_H + (layer.length - 1) * GAP_Y;
+    let y = -totalH / 2;
+    for (const node of layer) {
+      positions.set(node.id, { x, y });
+      y += NODE_H + GAP_Y;
+    }
+    x += NODE_W + GAP_X;
   }
 
-  if (flow.length === 0) return null;
+  // Calculate SVG bounds
+  const allPos = Array.from(positions.values());
+  if (allPos.length === 0) return null;
+
+  const PAD = 100;
+  const minX = Math.min(...allPos.map((p) => p.x)) - PAD;
+  const minY = Math.min(...allPos.map((p) => p.y)) - PAD;
+  const maxX = Math.max(...allPos.map((p) => p.x)) + NODE_W + PAD;
+  const maxY = Math.max(...allPos.map((p) => p.y)) + NODE_H + PAD;
+  const svgW = maxX - minX;
+  const svgH = maxY - minY;
+
+  // Determine external inputs (root nodes' inputs) and final outputs (leaf nodes' outputs)
+  const hasIncoming = new Set(edges.map((e) => e.to));
+  const hasOutgoing = new Set(edges.map((e) => e.from));
+  const rootNodes = nodes.filter((n) => !hasIncoming.has(n.id));
+  const leafNodes = nodes.filter((n) => !hasOutgoing.has(n.id));
 
   return (
-    <div className="mb-4 p-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-x-auto">
-      <div className="flex items-center gap-0 min-w-max">
-        {flow.map((node, idx) => (
-          <div key={idx} className="flex items-center">
-            {/* External inputs */}
-            {node.externalInputs.length > 0 && (
-              <>
-                <div className="flex flex-col items-center justify-center gap-1 px-3">
-                  {node.externalInputs.map((name) => (
-                    <div
-                      key={name}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-dashed border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900"
-                    >
-                      <span
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: colorFor(name) }}
-                      />
-                      <span className="text-[11px] text-zinc-600 dark:text-zinc-400 whitespace-nowrap">
-                        {name}
-                      </span>
-                    </div>
-                  ))}
-                  <span className="text-[9px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mt-0.5">
-                    External
-                  </span>
-                </div>
-                <div className="flex items-center px-1">
-                  <svg width="24" height="24" viewBox="0 0 24 24" className="text-zinc-300 dark:text-zinc-600">
-                    <path d="M5 12h14M14 7l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-              </>
-            )}
+    <div className="mb-3 p-3 bg-muted/30 border rounded-lg overflow-hidden">
+      <svg
+        viewBox={`${minX} ${minY} ${svgW} ${svgH}`}
+        className="w-full"
+        style={{ minHeight: 120, maxHeight: 600 }}
+        preserveAspectRatio="xMidYMid meet"
+      >
+        {/* Edges */}
+        {edges.map((edge, i) => {
+          const fromPos = positions.get(edge.from);
+          const toPos = positions.get(edge.to);
+          if (!fromPos || !toPos) return null;
 
-            {/* Chained data arrow between steps */}
-            {idx > 0 && (
-              <div className="flex flex-col items-center justify-center px-1">
-                <div className="flex flex-col items-center gap-0.5 mb-1">
-                  {node.chainedInputs.map((name) => (
-                    <span
-                      key={name}
-                      className="text-[9px] px-1.5 py-0.5 rounded-full text-white whitespace-nowrap"
-                      style={{ backgroundColor: colorFor(name) }}
-                    >
-                      {name}
-                    </span>
-                  ))}
-                </div>
-                <svg width="32" height="24" viewBox="0 0 32 24" className="text-zinc-300 dark:text-zinc-600">
-                  <path d="M2 12h28M24 7l6 5-6 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-            )}
+          const x1 = fromPos.x + NODE_W;
+          const y1 = fromPos.y + NODE_H / 2;
+          const x2 = toPos.x;
+          const y2 = toPos.y + NODE_H / 2;
+          const cx1 = x1 + (x2 - x1) * 0.4;
+          const cx2 = x2 - (x2 - x1) * 0.4;
 
-            {/* Process box */}
-            <div className="border-2 border-blue-400 dark:border-blue-500 rounded-lg px-5 py-3 bg-white dark:bg-zinc-900 min-w-[120px] text-center">
-              <div className="text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-0.5">
-                {node.category?.name}
-              </div>
-              <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                {node.scenario.name}
-              </div>
-            </div>
+          // Find data flowing on this edge
+          const fromSc = getScenario(nodes.find((n) => n.id === edge.from)?.scenarioId ?? "");
+          const toSc = getScenario(nodes.find((n) => n.id === edge.to)?.scenarioId ?? "");
+          const dataFlow = fromSc && toSc
+            ? fromSc.outputs.filter((o) => toSc.inputs.includes(o))
+            : [];
 
-            {/* Final outputs at end of flow */}
-            {idx === flow.length - 1 && node.outputs.length > 0 && (
-              <>
-                <div className="flex items-center px-1">
-                  <svg width="24" height="24" viewBox="0 0 24 24" className="text-zinc-300 dark:text-zinc-600">
-                    <path d="M5 12h14M14 7l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-                <div className="flex flex-col items-center justify-center gap-1 px-3">
-                  {node.outputs.map((name) => (
-                    <div
-                      key={name}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-dashed border-green-300 dark:border-green-600 bg-green-50 dark:bg-green-500/5"
-                    >
-                      <span
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: colorFor(name) }}
-                      />
-                      <span className="text-[11px] text-green-700 dark:text-green-400 whitespace-nowrap">
-                        {name}
-                      </span>
-                    </div>
-                  ))}
-                  <span className="text-[9px] uppercase tracking-wider text-green-500 dark:text-green-500 mt-0.5">
-                    Final Output
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
+          const midX = (x1 + x2) / 2;
+          const midY = (y1 + y2) / 2;
+
+          return (
+            <g key={i}>
+              <path
+                d={`M${x1},${y1} C${cx1},${y1} ${cx2},${y2} ${x2},${y2}`}
+                fill="none"
+                className="stroke-muted-foreground/30"
+                strokeWidth="2"
+                markerEnd="url(#arrowhead)"
+              />
+              {dataFlow.map((name, di) => (
+                <g key={name} transform={`translate(${midX}, ${midY + di * 16 - (dataFlow.length - 1) * 8})`}>
+                  <rect
+                    x={-name.length * 4.0 - 8}
+                    y={-8}
+                    width={name.length * 8.0 + 16}
+                    height={16}
+                    rx="8"
+                    fill={colorFor(name)}
+                  />
+                  <text
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    className="fill-white text-[9px] font-semibold"
+                    style={{ pointerEvents: "none" }}
+                  >
+                    {name}
+                  </text>
+                </g>
+              ))}
+            </g>
+          );
+        })}
+
+        {/* Arrowhead marker */}
+        <defs>
+          <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" className="fill-muted-foreground/30" />
+          </marker>
+        </defs>
+
+        {/* External inputs for root nodes */}
+        {rootNodes.map((node) => {
+          const pos = positions.get(node.id);
+          const sc = getScenario(node.scenarioId);
+          if (!pos || !sc || sc.inputs.length === 0) return null;
+          return sc.inputs.map((name, i) => {
+            const bx = pos.x - 50;
+            const by = pos.y + NODE_H / 2 + (i - (sc.inputs.length - 1) / 2) * 18;
+            return (
+              <g key={`ext-${node.id}-${name}`}>
+                <rect x={bx - name.length * 4.0 - 12} y={by - 9} width={name.length * 8.0 + 24} height={18} rx="4"
+                  className="stroke-muted-foreground/30 fill-background" strokeWidth="1" strokeDasharray="3 2" />
+                <text x={bx} y={by} textAnchor="middle" dominantBaseline="central"
+                  className="fill-muted-foreground text-[9px]">{name}</text>
+              </g>
+            );
+          });
+        })}
+
+        {/* Final outputs for leaf nodes */}
+        {leafNodes.map((node) => {
+          const pos = positions.get(node.id);
+          const sc = getScenario(node.scenarioId);
+          if (!pos || !sc || sc.outputs.length === 0) return null;
+          return sc.outputs.map((name, i) => {
+            const bx = pos.x + NODE_W + 50;
+            const by = pos.y + NODE_H / 2 + (i - (sc.outputs.length - 1) / 2) * 18;
+            return (
+              <g key={`out-${node.id}-${name}`}>
+                <line x1={pos.x + NODE_W} y1={pos.y + NODE_H / 2} x2={bx - name.length * 4.0 - 12} y2={by}
+                  className="stroke-green-500/40" strokeWidth="1.5" />
+                <rect x={bx - name.length * 4.0 - 12} y={by - 9} width={name.length * 8.0 + 24} height={18} rx="4"
+                  className="fill-green-500/5" stroke="rgba(34,197,94,0.4)" strokeWidth="1" strokeDasharray="3 2" />
+                <text x={bx} y={by} textAnchor="middle" dominantBaseline="central"
+                  className="text-[9px]" fill="rgb(22,163,74)">{name}</text>
+              </g>
+            );
+          });
+        })}
+
+        {/* Nodes */}
+        {nodes.map((node) => {
+          const pos = positions.get(node.id);
+          if (!pos) return null;
+          const sc = getScenario(node.scenarioId);
+          const cat = sc ? getCategory(sc.categoryId) : null;
+          if (!sc) return null;
+
+          const isSelected = connectFrom === node.id;
+
+          return (
+            <g
+              key={node.id}
+              transform={`translate(${pos.x}, ${pos.y})`}
+              onClick={() => editing && onNodeClick(node.id)}
+              className={editing ? "cursor-pointer" : ""}
+            >
+              <rect
+                width={NODE_W}
+                height={NODE_H}
+                rx="8"
+                className={`fill-background ${
+                  isSelected
+                    ? "stroke-primary stroke-[3]"
+                    : "stroke-primary/40 stroke-2"
+                }`}
+              />
+              <text x={NODE_W / 2} y={20} textAnchor="middle" className="fill-muted-foreground text-[9px] uppercase tracking-wider">
+                {cat?.name}
+              </text>
+              <text x={NODE_W / 2} y={38} textAnchor="middle" className="fill-foreground text-[11px] font-semibold">
+                {sc.name}
+              </text>
+              {editing && (
+                <g
+                  onClick={(e) => { e.stopPropagation(); onRemoveNode(node.id); }}
+                  className="cursor-pointer"
+                >
+                  <circle cx={NODE_W - 4} cy={4} r={8} className="fill-destructive/10 hover:fill-destructive/20" />
+                  <text x={NODE_W - 4} y={5} textAnchor="middle" dominantBaseline="central" className="fill-destructive text-[9px]">x</text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }

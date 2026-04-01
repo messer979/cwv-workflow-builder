@@ -10,6 +10,7 @@ export interface Scenario {
   categoryId: string;
   inputs: string[];   // free-text data type names
   outputs: string[];  // free-text data type names
+  steps: string[];    // ordered list of steps within this scenario
 }
 
 export interface Category {
@@ -22,10 +23,22 @@ export interface WorkflowStep {
   order: number;
 }
 
+export interface WorkflowNode {
+  id: string;
+  scenarioId: string;
+}
+
+export interface WorkflowEdge {
+  from: string;  // WorkflowNode id, or "start" for entry nodes
+  to: string;    // WorkflowNode id
+}
+
 export interface Workflow {
   id: string;
   name: string;
-  steps: WorkflowStep[];
+  steps: WorkflowStep[];       // kept for backwards compat during migration
+  nodes?: WorkflowNode[];
+  edges?: WorkflowEdge[];
 }
 
 export interface AppState {

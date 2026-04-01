@@ -1,6 +1,342 @@
 {
   "dataTypes": [],
-  "categories": [],
-  "scenarios": [],
-  "workflows": []
+  "categories": [
+    {
+      "id": "cat_po_creation",
+      "name": "Purchase Order Creation"
+    },
+    {
+      "id": "cat_asn_creation",
+      "name": "ASN Creation"
+    },
+    {
+      "id": "cat_yard_mgmt",
+      "name": "Yard Management"
+    },
+    {
+      "id": "cat_receiving",
+      "name": "Receiving"
+    },
+    {
+      "id": "0hy080pk",
+      "name": "Receiving Completion"
+    },
+    {
+      "id": "cat_putaway",
+      "name": "Putaway"
+    },
+    {
+      "id": "cat_cyclecount",
+      "name": "Cycle Counting"
+    },
+    {
+      "id": "cat_order_creation",
+      "name": "Order Creation"
+    },
+    {
+      "id": "cat_wave_planning",
+      "name": "Wave Planning"
+    },
+    {
+      "id": "cat_picking",
+      "name": "Picking"
+    },
+    {
+      "id": "cat_packing",
+      "name": "Packing"
+    },
+    {
+      "id": "cat_loading",
+      "name": "Loading"
+    },
+    {
+      "id": "cat_shipment_close",
+      "name": "Shipment Close"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "sc_po_create",
+      "name": "Create Purchase Order",
+      "categoryId": "cat_po_creation",
+      "inputs": [
+        "Vendor",
+        "Item"
+      ],
+      "outputs": [
+        "Purchase Order"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_asn_create",
+      "name": "Create ASN",
+      "categoryId": "cat_asn_creation",
+      "inputs": [
+        "Purchase Order"
+      ],
+      "outputs": [
+        "ASN"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_yard_checkin",
+      "name": "Yard Check-In",
+      "categoryId": "cat_yard_mgmt",
+      "inputs": [
+        "ASN"
+      ],
+      "outputs": [
+        "Yard Location",
+        "Trailer"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_recv_pallets",
+      "name": "Receive Pallets",
+      "categoryId": "cat_receiving",
+      "inputs": [
+        "Purchase Order",
+        "ASN"
+      ],
+      "outputs": [
+        "LPN",
+        "Received ASN"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_recv_cases",
+      "name": "Receive Cases",
+      "categoryId": "cat_receiving",
+      "inputs": [
+        "Purchase Order",
+        "ASN"
+      ],
+      "outputs": [
+        "LPN"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_putaway_pallets",
+      "name": "Putaway Pallets",
+      "categoryId": "cat_putaway",
+      "inputs": [
+        "LPN"
+      ],
+      "outputs": [
+        "Located Inventory"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_putaway_cases",
+      "name": "Putaway Cases",
+      "categoryId": "cat_putaway",
+      "inputs": [
+        "LPN"
+      ],
+      "outputs": [
+        "Located Inventory"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_cycle_count",
+      "name": "Cycle Count",
+      "categoryId": "cat_cyclecount",
+      "inputs": [
+        "Location",
+        "Located Inventory"
+      ],
+      "outputs": [
+        "Verified Inventory"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_order_create",
+      "name": "Create Order",
+      "categoryId": "cat_order_creation",
+      "inputs": [
+        "Located Inventory"
+      ],
+      "outputs": [
+        "Order"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_wave_plan",
+      "name": "Plan Wave",
+      "categoryId": "cat_wave_planning",
+      "inputs": [
+        "Order"
+      ],
+      "outputs": [
+        "Wave",
+        "Pick Task"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_pick_discrete",
+      "name": "Discrete Picking",
+      "categoryId": "cat_picking",
+      "inputs": [
+        "Pick Task",
+        "Located Inventory"
+      ],
+      "outputs": [
+        "oLPN"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_pick_batch",
+      "name": "Batch Picking",
+      "categoryId": "cat_picking",
+      "inputs": [
+        "Pick Task",
+        "Located Inventory"
+      ],
+      "outputs": [
+        "Tote"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_packing",
+      "name": "Pack Order",
+      "categoryId": "cat_packing",
+      "inputs": [
+        "Tote"
+      ],
+      "outputs": [
+        "oLPN"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_loading",
+      "name": "Load Trailer",
+      "categoryId": "cat_loading",
+      "inputs": [
+        "Shipment",
+        "oLPN"
+      ],
+      "outputs": [
+        "Loaded Shipment"
+      ],
+      "steps": []
+    },
+    {
+      "id": "sc_shipment_close",
+      "name": "Close Shipment",
+      "categoryId": "cat_shipment_close",
+      "inputs": [
+        "Loaded Shipment"
+      ],
+      "outputs": [
+        "Closed Shipment"
+      ],
+      "steps": []
+    },
+    {
+      "id": "ykdyn409",
+      "name": "Receive Cross Dock",
+      "categoryId": "cat_receiving",
+      "inputs": [
+        "ASN",
+        "Order"
+      ],
+      "outputs": [
+        "oLPN"
+      ],
+      "steps": []
+    },
+    {
+      "id": "65vihxo6",
+      "name": "Verify ASN",
+      "categoryId": "0hy080pk",
+      "inputs": [
+        "Received ASN"
+      ],
+      "outputs": [
+        "PIX"
+      ],
+      "steps": []
+    }
+  ],
+  "workflows": [
+    {
+      "id": "czr5cvmk",
+      "name": "Receive and Verify",
+      "steps": [
+        {
+          "scenarioId": "sc_recv_pallets",
+          "order": 0
+        },
+        {
+          "scenarioId": "65vihxo6",
+          "order": 1
+        }
+      ],
+      "nodes": [
+        {
+          "id": "3vn6vr5b",
+          "scenarioId": "sc_recv_pallets"
+        },
+        {
+          "id": "j12k4qg9",
+          "scenarioId": "65vihxo6"
+        },
+        {
+          "id": "owlaxh9w",
+          "scenarioId": "sc_putaway_pallets"
+        },
+        {
+          "id": "vd12cu7j",
+          "scenarioId": "sc_order_create"
+        },
+        {
+          "id": "82k8drwz",
+          "scenarioId": "sc_wave_plan"
+        },
+        {
+          "id": "lxxxn07d",
+          "scenarioId": "sc_pick_discrete"
+        }
+      ],
+      "edges": [
+        {
+          "from": "3vn6vr5b",
+          "to": "j12k4qg9"
+        },
+        {
+          "from": "3vn6vr5b",
+          "to": "owlaxh9w"
+        },
+        {
+          "from": "owlaxh9w",
+          "to": "vd12cu7j"
+        },
+        {
+          "from": "vd12cu7j",
+          "to": "82k8drwz"
+        },
+        {
+          "from": "owlaxh9w",
+          "to": "lxxxn07d"
+        },
+        {
+          "from": "82k8drwz",
+          "to": "lxxxn07d"
+        }
+      ]
+    }
+  ]
 }
