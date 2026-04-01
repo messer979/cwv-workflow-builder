@@ -29,6 +29,13 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 // ─── Color assignment for data type badges ───────────────────────────────────
 
@@ -64,8 +71,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur px-6 py-3">
+      <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur px-6 py-3 flex items-center justify-between">
         <h1 className="text-lg font-bold">Warehouse Workflow Builder</h1>
+        <DataTypesDrawer />
       </header>
 
       <div className="px-6 py-6 space-y-8">
@@ -73,6 +81,118 @@ export default function Home() {
         <WorkflowsSection />
       </div>
     </div>
+  );
+}
+
+// ─── Data Types Drawer ───────────────────────────────────────────────────────
+
+function DataTypesDrawer() {
+  const allKnown = useStore((s) => s.getAllKnownDataTypes)();
+  const scenarios = useStore((s) => s.scenarios);
+  const renameDataType = useStore((s) => s.renameDataType);
+  const deleteDataType = useStore((s) => s.deleteDataType);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+
+  const startEdit = (name: string) => {
+    setEditingName(name);
+    setEditValue(name);
+  };
+
+  const commitEdit = () => {
+    if (editingName && editValue.trim() && editValue.trim() !== editingName) {
+      renameDataType(editingName, editValue.trim());
+    }
+    setEditingName(null);
+    setEditValue("");
+  };
+
+  // Count usage for each data type
+  const usageCount = (name: string) => {
+    let count = 0;
+    for (const s of scenarios) {
+      if (s.inputs.includes(name)) count++;
+      if (s.outputs.includes(name)) count++;
+    }
+    return count;
+  };
+
+  return (
+    <Sheet>
+      <SheetTrigger
+        render={<Button variant="outline" size="sm" className="h-7 text-xs" />}
+      >
+        Data Types ({allKnown.length})
+      </SheetTrigger>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Data Types</SheetTitle>
+        </SheetHeader>
+        <div className="mt-4">
+          <p className="text-xs text-muted-foreground mb-3">
+            These are derived from scenario inputs/outputs. Renaming or deleting here propagates to all scenarios.
+          </p>
+          {allKnown.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No data types yet. Add inputs/outputs to scenarios.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {allKnown.map((name) => (
+                <div
+                  key={name}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 group"
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: colorFor(name) }}
+                  />
+                  {editingName === name ? (
+                    <Input
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitEdit();
+                        if (e.key === "Escape") { setEditingName(null); setEditValue(""); }
+                      }}
+                      onBlur={commitEdit}
+                      className="h-6 text-xs flex-1"
+                      autoFocus
+                    />
+                  ) : (
+                    <span
+                      className="text-sm flex-1 cursor-pointer"
+                      onClick={() => startEdit(name)}
+                    >
+                      {name}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {usageCount(name)} use{usageCount(name) !== 1 ? "s" : ""}
+                  </span>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {editingName !== name && (
+                      <button
+                        onClick={() => startEdit(name)}
+                        className="text-[10px] text-primary hover:underline"
+                      >
+                        Rename
+                      </button>
+                    )}
+                    <button
+                      onClick={() => deleteDataType(name)}
+                      className="text-[10px] text-destructive hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

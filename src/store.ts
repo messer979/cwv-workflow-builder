@@ -198,6 +198,10 @@ interface Actions {
   _hydrated: boolean;
   hydrate: () => Promise<void>;
 
+  // Data types (derived from scenarios)
+  renameDataType: (oldName: string, newName: string) => void;
+  deleteDataType: (name: string) => void;
+
   // Helpers
   getAllKnownDataTypes: () => string[];
 }
@@ -410,6 +414,30 @@ export const useStore = create<AppState & Actions>()(
                 }
               : w
           ),
+        });
+      },
+
+      renameDataType: (oldName, newName) => {
+        const trimmed = newName.trim();
+        if (!trimmed || trimmed === oldName) return;
+        const state = get();
+        set({
+          scenarios: state.scenarios.map((s) => ({
+            ...s,
+            inputs: s.inputs.map((i) => (i === oldName ? trimmed : i)),
+            outputs: s.outputs.map((o) => (o === oldName ? trimmed : o)),
+          })),
+        });
+      },
+
+      deleteDataType: (name) => {
+        const state = get();
+        set({
+          scenarios: state.scenarios.map((s) => ({
+            ...s,
+            inputs: s.inputs.filter((i) => i !== name),
+            outputs: s.outputs.filter((o) => o !== name),
+          })),
         });
       },
 
