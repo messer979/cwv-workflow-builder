@@ -36,6 +36,24 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 // ─── Color assignment for data type badges ───────────────────────────────────
 
@@ -70,17 +88,129 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur px-6 py-3 flex items-center justify-between">
-        <h1 className="text-lg font-bold">Warehouse Workflow Builder</h1>
-        <DataTypesDrawer />
-      </header>
+    <TooltipProvider>
+      <div className="min-h-screen bg-background">
+        <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur px-6 py-3 flex items-center justify-between">
+          <h1 className="text-lg font-bold">Warehouse Workflow Builder</h1>
+          <DataTypesDrawer />
+        </header>
 
-      <div className="px-6 py-6 space-y-8">
-        <CategoriesAndScenarios />
-        <WorkflowsSection />
+        <div className="px-6 py-6 space-y-8">
+          <CategoriesAndScenarios />
+          <WorkflowsSection />
+        </div>
+
+        <AIGenerateFAB />
       </div>
-    </div>
+    </TooltipProvider>
+  );
+}
+
+// ─── Help Tip ────────────────────────────────────────────────────────────────
+
+function HelpTip({ text }: { text: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-muted text-muted-foreground text-[10px] font-bold hover:bg-muted-foreground/20 transition-colors cursor-help shrink-0">
+        ?
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="start" className="max-w-sm text-xs leading-relaxed">
+        {text}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+// ─── AI Generate FAB ─────────────────────────────────────────────────────────
+
+function AIGenerateFAB() {
+  const [open, setOpen] = useState(false);
+  const [description, setDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const mergeGenerated = useStore((s) => s.mergeGenerated);
+
+  const handleGenerate = async () => {
+    if (!description.trim()) return;
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: description.trim() }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      mergeGenerated(data);
+      setDescription("");
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center text-2xl"
+        title="Generate with AI"
+      >
+        &#x2728;
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Generate with AI</DialogTitle>
+            <DialogDescription>
+              Describe your warehouse operations and the AI will generate categories, scenarios with inputs/outputs, and example workflows.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={"Describe your warehouse operations...\n\nExample: We receive pallets and cases via ASN. After receiving, pallets go to bulk putaway while cases go to forward pick locations. We do discrete picking for small orders and batch picking for large ones. Picked items are packed into oLPNs and loaded onto trailers."}
+              rows={8}
+              className="text-sm"
+              disabled={loading}
+            />
+
+            {error && (
+              <div className="p-2 rounded-md bg-destructive/10 text-destructive text-xs">
+                {error}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <DialogClose
+              render={<Button variant="ghost" size="sm" disabled={loading} />}
+            >
+              Cancel
+            </DialogClose>
+            <Button
+              size="sm"
+              onClick={handleGenerate}
+              disabled={loading || !description.trim()}
+            >
+              {loading ? "Generating..." : "Generate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -199,8 +329,9 @@ function DataTypesDrawer() {
 // ─── Categories & Scenarios ──────────────────────────────────────────────────
 
 function CategoriesAndScenarios() {
-  const { categories, addCategory, reorderCategories } = useStore();
+  const { categories, scenarios, addCategory, reorderCategories } = useStore();
   const [catName, setCatName] = useState("");
+  const [expanded, setExpanded] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -229,7 +360,10 @@ function CategoriesAndScenarios() {
   return (
     <section>
       <div className="flex items-center gap-3 mb-4">
-        <h2 className="text-base font-semibold">Categories & Scenarios</h2>
+        <h2 className="text-base font-semibold flex items-center gap-1.5">
+          Categories & Scenarios
+          <HelpTip text="Categories group related scenarios. Scenarios in the same category are alternate ways to do the same activity (e.g. Receive Pallets vs Receive Cases). Only one scenario per category can appear in a workflow. Each scenario has typed inputs and outputs that determine how it connects to other scenarios." />
+        </h2>
         <div className="flex gap-2 flex-1">
           <Input
             value={catName}
@@ -242,12 +376,32 @@ function CategoriesAndScenarios() {
             Add
           </Button>
         </div>
+        <div className="flex items-center gap-1.5 ml-auto">
+          <Label htmlFor="expanded-view" className="text-[10px] text-muted-foreground cursor-pointer">
+            Expanded
+          </Label>
+          <Switch
+            id="expanded-view"
+            checked={expanded}
+            onCheckedChange={setExpanded}
+          />
+        </div>
       </div>
 
       {categories.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-4">
           No categories yet.
         </p>
+      ) : expanded ? (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={categories.map((c) => c.id)} strategy={rectSortingStrategy}>
+            <div className="space-y-2">
+              {categories.map((cat) => (
+                <SortableExpandedCategoryRow key={cat.id} category={cat} />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={categories.map((c) => c.id)} strategy={rectSortingStrategy}>
@@ -260,6 +414,95 @@ function CategoriesAndScenarios() {
         </DndContext>
       )}
     </section>
+  );
+}
+
+function SortableExpandedCategoryRow({ category }: { category: { id: string; name: string } }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: category.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <ExpandedCategoryRow category={category} dragListeners={listeners} />
+    </div>
+  );
+}
+
+function ExpandedCategoryRow({
+  category,
+  dragListeners,
+}: {
+  category: { id: string; name: string };
+  dragListeners?: Record<string, unknown>;
+}) {
+  const { scenarios, removeCategory } = useStore();
+  const [adding, setAdding] = useState(false);
+  const catScenarios = scenarios.filter((s) => s.categoryId === category.id);
+
+  return (
+    <div className="flex gap-3 items-start border rounded-lg bg-card p-3 ring-1 ring-foreground/10">
+      {/* Category label on the left */}
+      <div className="w-44 shrink-0 pt-1">
+        <div className="flex items-center gap-1.5">
+          <span
+            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+            {...dragListeners}
+          >
+            &#x2630;
+          </span>
+          <span className="text-sm font-semibold">{category.name}</span>
+        </div>
+        <div className="flex gap-1 mt-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 px-1.5 text-[10px]"
+            onClick={() => setAdding(true)}
+          >
+            + Scenario
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-5 px-1.5 text-[10px] text-destructive"
+            onClick={() => removeCategory(category.id)}
+          >
+            x
+          </Button>
+        </div>
+      </div>
+
+      {/* Scenarios in a grid, 3 per row */}
+      <div className="flex-1 min-w-0">
+        {catScenarios.length === 0 && !adding ? (
+          <p className="text-xs text-muted-foreground py-2">No scenarios yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+            {catScenarios.map((sc) => (
+              <ScenarioRow key={sc.id} scenario={sc} />
+            ))}
+            {adding && (
+              <NewScenarioForm
+                categoryId={category.id}
+                onDone={() => setAdding(false)}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -707,7 +950,10 @@ function WorkflowsSection() {
   return (
     <section>
       <div className="flex items-center gap-3 mb-4">
-        <h2 className="text-base font-semibold">Workflows</h2>
+        <h2 className="text-base font-semibold flex items-center gap-1.5">
+          Workflows
+          <HelpTip text="Workflows chain scenarios into an end-to-end process. Each scenario's outputs feed into downstream scenarios' inputs. Workflows can branch — one scenario can feed multiple parallel paths. Click Edit to add scenarios and connect them. Validation ensures all inputs are satisfied by predecessor outputs." />
+        </h2>
         <div className="flex gap-2 flex-1">
           <Input
             value={newName}
@@ -727,7 +973,7 @@ function WorkflowsSection() {
           No workflows yet.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {workflows.map((wf) => (
             <WorkflowCard key={wf.id} workflow={wf} />
           ))}
@@ -843,7 +1089,7 @@ function getAvailableOutputs(
 
 // ─── Workflow Card ───────────────────────────────────────────────────────────
 
-function WorkflowCard({ workflow }: { workflow: Workflow }) {
+function useWorkflowLogic(workflow: Workflow) {
   const {
     scenarios,
     categories,
@@ -853,8 +1099,6 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
     addWorkflowEdge,
     removeWorkflowEdge,
   } = useStore();
-  const [editing, setEditing] = useState(false);
-  const [connectFrom, setConnectFrom] = useState<string | null>(null);
 
   const nodes = workflow.nodes ?? [];
   const edges = workflow.edges ?? [];
@@ -866,7 +1110,6 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
   const isValid = errors.length === 0;
   const layers = buildLayers(nodes, edges, getScenario);
 
-  // Which scenarios can be added
   const usedCategoryIds = new Set(
     nodes.map((n) => getScenario(n.scenarioId)?.categoryId).filter(Boolean) as string[]
   );
@@ -879,7 +1122,6 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
       }
       if (nodes.length > 0) {
         const missing = sc.inputs.filter((inp) => !available.has(inp));
-        // Allow adding if at least some inputs could be satisfied, or if it's a root
         const hasNoIncomingNeeds = sc.inputs.length === 0;
         if (missing.length > 0 && !hasNoIncomingNeeds) {
           return { scenario: sc, reason: `Missing: ${missing.join(", ")}` };
@@ -889,11 +1131,8 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
     });
   };
 
-  const addable = getAddable();
-
   const handleAddNode = (scenarioId: string) => {
     const nodeId = addWorkflowNode(workflow.id, scenarioId);
-    // Auto-connect: find nodes whose outputs satisfy this scenario's inputs
     const sc = getScenario(scenarioId);
     if (sc && nodes.length > 0) {
       for (const existing of nodes) {
@@ -905,6 +1144,21 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
     }
   };
 
+  return {
+    nodes, edges, scenarios, getScenario, getCategory,
+    errors, isValid, layers, getAddable, handleAddNode,
+    removeWorkflow, removeWorkflowNode, addWorkflowEdge, removeWorkflowEdge,
+  };
+}
+
+function WorkflowCard({ workflow }: { workflow: Workflow }) {
+  const wf = useWorkflowLogic(workflow);
+  const [editing, setEditing] = useState(false);
+  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const addable = wf.getAddable();
+
   const handleNodeClick = (nodeId: string) => {
     if (!editing) return;
     if (connectFrom === null) {
@@ -912,121 +1166,156 @@ function WorkflowCard({ workflow }: { workflow: Workflow }) {
     } else if (connectFrom === nodeId) {
       setConnectFrom(null);
     } else {
-      // Check if edge already exists
-      const exists = edges.some((e) => e.from === connectFrom && e.to === nodeId);
+      const exists = wf.edges.some((e) => e.from === connectFrom && e.to === nodeId);
       if (exists) {
-        removeWorkflowEdge(workflow.id, connectFrom, nodeId);
+        wf.removeWorkflowEdge(workflow.id, connectFrom, nodeId);
       } else {
-        addWorkflowEdge(workflow.id, connectFrom, nodeId);
+        wf.addWorkflowEdge(workflow.id, connectFrom, nodeId);
       }
       setConnectFrom(null);
     }
   };
 
   return (
-    <Card size="sm">
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <CardTitle className="text-sm">{workflow.name}</CardTitle>
-          {nodes.length > 0 && (
-            <Badge variant={isValid ? "secondary" : "destructive"} className="h-4 text-[9px]">
-              {isValid ? "Valid" : "Invalid"}
-            </Badge>
+    <>
+      <Card size="sm" className="gap-2">
+        <CardHeader className="pb-0">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm">{workflow.name}</CardTitle>
+            {wf.nodes.length > 0 && (
+              <Badge variant={wf.isValid ? "secondary" : "destructive"} className="h-4 text-[9px]">
+                {wf.isValid ? "Valid" : "Invalid"}
+              </Badge>
+            )}
+          </div>
+          <CardAction>
+            <div className="flex gap-1">
+              {wf.nodes.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-[10px]"
+                  onClick={() => setExpanded(true)}
+                  title="Expand"
+                >
+                  &#x26F6;
+                </Button>
+              )}
+              <Button
+                variant={editing ? "default" : "outline"}
+                size="sm"
+                className="h-6 text-[10px]"
+                onClick={() => { setEditing(!editing); setConnectFrom(null); }}
+              >
+                {editing ? "Done" : "Edit"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-[10px] text-destructive"
+                onClick={() => wf.removeWorkflow(workflow.id)}
+              >
+                x
+              </Button>
+            </div>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {wf.errors.length > 0 && (
+            <div className="mb-2 p-1.5 rounded-md bg-destructive/10 text-destructive text-[10px]">
+              {wf.errors.map((err, i) => (
+                <p key={i}>{err}</p>
+              ))}
+            </div>
           )}
-        </div>
-        <CardAction>
-          <div className="flex gap-1">
-            <Button
-              variant={editing ? "default" : "outline"}
-              size="sm"
-              className="h-6 text-[10px]"
-              onClick={() => { setEditing(!editing); setConnectFrom(null); }}
-            >
-              {editing ? "Done" : "Edit"}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-1.5 text-[10px] text-destructive"
-              onClick={() => removeWorkflow(workflow.id)}
-            >
-              x
-            </Button>
-          </div>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {errors.length > 0 && (
-          <div className="mb-3 p-2 rounded-md bg-destructive/10 text-destructive text-[11px]">
-            {errors.map((err, i) => (
-              <p key={i}>{err}</p>
-            ))}
-          </div>
-        )}
 
-        {nodes.length === 0 ? (
-          <p className="text-xs text-muted-foreground text-center py-2">
-            No steps yet. Click Edit to add scenarios.
-          </p>
-        ) : (
-          <GraphMap
-            nodes={nodes}
-            edges={edges}
-            layers={layers}
-            getScenario={getScenario}
-            getCategory={getCategory}
-            editing={editing}
-            connectFrom={connectFrom}
-            onNodeClick={handleNodeClick}
-            onRemoveNode={(nodeId) => removeWorkflowNode(workflow.id, nodeId)}
-          />
-        )}
-
-        {editing && connectFrom && (
-          <div className="mb-2 p-2 rounded-md bg-primary/10 text-primary text-[11px]">
-            Click another node to connect from &quot;{getScenario(nodes.find((n) => n.id === connectFrom)?.scenarioId ?? "")?.name}&quot;.
-            <button onClick={() => setConnectFrom(null)} className="ml-2 underline">Cancel</button>
-          </div>
-        )}
-
-        {editing && (
-          <div className="border-t pt-2">
-            <p className="text-[10px] font-medium text-muted-foreground mb-1.5">
-              Add Scenario:
+          {wf.nodes.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-1">
+              No steps yet. Click Edit to add scenarios.
             </p>
-            <div className="flex flex-wrap gap-1.5">
-              {addable.map(({ scenario, reason }) => {
-                const cat = getCategory(scenario.categoryId);
-                return (
-                  <button
-                    key={scenario.id}
-                    onClick={() => !reason && handleAddNode(scenario.id)}
-                    disabled={!!reason}
-                    title={reason || `Add "${scenario.name}"`}
-                    className={`px-2 py-1 rounded text-[10px] border text-left transition-colors ${
-                      reason
-                        ? "border-border bg-muted/30 text-muted-foreground cursor-not-allowed opacity-50"
-                        : "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 cursor-pointer"
-                    }`}
-                  >
-                    <span className="text-[9px] text-muted-foreground block">{cat?.name}</span>
-                    {scenario.name}
-                    {reason && (
-                      <span className="block text-[9px] text-destructive mt-0.5">{reason}</span>
-                    )}
-                  </button>
-                );
-              })}
-              {scenarios.length === 0 && (
-                <span className="text-[10px] text-muted-foreground">
-                  Create scenarios first above.
+          ) : (
+            <GraphMap
+              nodes={wf.nodes}
+              edges={wf.edges}
+              layers={wf.layers}
+              getScenario={wf.getScenario}
+              getCategory={wf.getCategory}
+              editing={editing}
+              connectFrom={connectFrom}
+              onNodeClick={handleNodeClick}
+              onRemoveNode={(nodeId) => wf.removeWorkflowNode(workflow.id, nodeId)}
+              compact
+            />
+          )}
+
+          {editing && connectFrom && (
+            <div className="mb-1 p-1.5 rounded-md bg-primary/10 text-primary text-[10px]">
+              Click another node to connect from &quot;{wf.getScenario(wf.nodes.find((n) => n.id === connectFrom)?.scenarioId ?? "")?.name}&quot;.
+              <button onClick={() => setConnectFrom(null)} className="ml-2 underline">Cancel</button>
+            </div>
+          )}
+
+          {editing && (
+            <div className="border-t pt-1.5">
+              <p className="text-[10px] font-medium text-muted-foreground mb-1">
+                Add Scenario:
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {addable.map(({ scenario, reason }) => {
+                  const cat = wf.getCategory(scenario.categoryId);
+                  return (
+                    <button
+                      key={scenario.id}
+                      onClick={() => !reason && wf.handleAddNode(scenario.id)}
+                      disabled={!!reason}
+                      title={reason || `Add "${scenario.name}"`}
+                      className={`px-2 py-0.5 rounded text-[10px] border text-left transition-colors ${
+                        reason
+                          ? "border-border bg-muted/30 text-muted-foreground cursor-not-allowed opacity-50"
+                          : "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 cursor-pointer"
+                      }`}
+                    >
+                      <span className="text-[9px] text-muted-foreground block">{cat?.name}</span>
+                      {scenario.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Expanded fullscreen dialog */}
+      <Dialog open={expanded} onOpenChange={setExpanded}>
+        <DialogContent className="!max-w-[80vw] w-[80vw] !h-[80vh] max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{workflow.name}</DialogTitle>
+            <DialogDescription>
+              {wf.nodes.length} scenarios &middot; {wf.edges.length} connections
+              {!wf.isValid && wf.errors.length > 0 && (
+                <span className="text-destructive ml-2">
+                  ({wf.errors.length} issue{wf.errors.length !== 1 ? "s" : ""})
                 </span>
               )}
-            </div>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            <GraphMap
+              nodes={wf.nodes}
+              edges={wf.edges}
+              layers={wf.layers}
+              getScenario={wf.getScenario}
+              getCategory={wf.getCategory}
+              editing={false}
+              connectFrom={null}
+              onNodeClick={() => {}}
+              onRemoveNode={() => {}}
+            />
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -1042,6 +1331,7 @@ function GraphMap({
   connectFrom,
   onNodeClick,
   onRemoveNode,
+  compact,
 }: {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
@@ -1052,6 +1342,7 @@ function GraphMap({
   connectFrom: string | null;
   onNodeClick: (nodeId: string) => void;
   onRemoveNode: (nodeId: string) => void;
+  compact?: boolean;
 }) {
   // Compute positions for each node
   const NODE_W = 140;
@@ -1076,7 +1367,7 @@ function GraphMap({
   const allPos = Array.from(positions.values());
   if (allPos.length === 0) return null;
 
-  const PAD = 100;
+  const PAD = 20;
   const minX = Math.min(...allPos.map((p) => p.x)) - PAD;
   const minY = Math.min(...allPos.map((p) => p.y)) - PAD;
   const maxX = Math.max(...allPos.map((p) => p.x)) + NODE_W + PAD;
@@ -1091,11 +1382,11 @@ function GraphMap({
   const leafNodes = nodes.filter((n) => !hasOutgoing.has(n.id));
 
   return (
-    <div className="mb-3 p-3 bg-muted/30 border rounded-lg overflow-hidden">
+    <div className={`${compact ? "mb-1 p-2 max-h-[30vh] overflow-auto" : "mb-3 p-3 overflow-hidden"} bg-muted/30 border rounded-lg`}>
       <svg
         viewBox={`${minX} ${minY} ${svgW} ${svgH}`}
-        className="w-full"
-        style={{ minHeight: 120, maxHeight: 600 }}
+        className={compact ? "block" : "w-full h-full block"}
+        style={compact ? { width: svgW, height: svgH } : { aspectRatio: `${svgW} / ${svgH}` }}
         preserveAspectRatio="xMidYMid meet"
       >
         {/* Edges */}

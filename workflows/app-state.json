@@ -10,10 +10,6 @@
       "name": "ASN Creation"
     },
     {
-      "id": "cat_yard_mgmt",
-      "name": "Yard Management"
-    },
-    {
       "id": "cat_receiving",
       "name": "Receiving"
     },
@@ -28,6 +24,10 @@
     {
       "id": "cat_cyclecount",
       "name": "Cycle Counting"
+    },
+    {
+      "id": "cat_yard_mgmt",
+      "name": "Yard Management"
     },
     {
       "id": "cat_order_creation",
@@ -52,6 +52,10 @@
     {
       "id": "cat_shipment_close",
       "name": "Shipment Close"
+    },
+    {
+      "id": "nkfp0heg",
+      "name": "Disposition"
     }
   ],
   "scenarios": [
@@ -73,7 +77,8 @@
       "name": "Create ASN",
       "categoryId": "cat_asn_creation",
       "inputs": [
-        "Purchase Order"
+        "Purchase Order",
+        "Item"
       ],
       "outputs": [
         "ASN"
@@ -95,7 +100,7 @@
     },
     {
       "id": "sc_recv_pallets",
-      "name": "Receive Pallets",
+      "name": "Receive Blind LPN",
       "categoryId": "cat_receiving",
       "inputs": [
         "ASN"
@@ -104,19 +109,12 @@
         "LPN",
         "Received ASN"
       ],
-      "steps": []
-    },
-    {
-      "id": "sc_recv_cases",
-      "name": "Receive Cases",
-      "categoryId": "cat_receiving",
-      "inputs": [
-        "ASN"
-      ],
-      "outputs": [
-        "LPN"
-      ],
-      "steps": []
+      "steps": [
+        "Scan ASN",
+        "Scan Blind LPN",
+        "Scan Item",
+        "Enter Quantity"
+      ]
     },
     {
       "id": "sc_putaway_pallets",
@@ -138,7 +136,8 @@
         "LPN"
       ],
       "outputs": [
-        "Located Inventory"
+        "Located Inventory",
+        "Batch Located Inventory"
       ],
       "steps": []
     },
@@ -265,6 +264,57 @@
         "PIX"
       ],
       "steps": []
+    },
+    {
+      "id": "er217pwg",
+      "name": "Receive LPN Level ASN",
+      "categoryId": "cat_receiving",
+      "inputs": [
+        "LPN Level ASN"
+      ],
+      "outputs": [
+        "LPN",
+        "Received ASN"
+      ],
+      "steps": []
+    },
+    {
+      "id": "1pdhcgm3",
+      "name": "Batch Order Planner",
+      "categoryId": "cat_order_creation",
+      "inputs": [
+        "Located Inventory",
+        "Batch Located Inventory"
+      ],
+      "outputs": [
+        "Order"
+      ],
+      "steps": []
+    },
+    {
+      "id": "rl5ghrmn",
+      "name": "Create Batch Specific ASN",
+      "categoryId": "cat_asn_creation",
+      "inputs": [
+        "Item"
+      ],
+      "outputs": [
+        "Batch Specific ASN"
+      ],
+      "steps": []
+    },
+    {
+      "id": "lluhq6nk",
+      "name": "Receive Batch LPNs",
+      "categoryId": "cat_receiving",
+      "inputs": [
+        "Batch Specific ASN"
+      ],
+      "outputs": [
+        "LPN",
+        "Batch Inventory"
+      ],
+      "steps": []
     }
   ],
   "workflows": [
@@ -366,6 +416,61 @@
           "to": "wfn_putaway"
         }
       ]
+    },
+    {
+      "id": "zsra5aaj",
+      "name": "New Workflow",
+      "steps": [],
+      "nodes": [
+        {
+          "id": "kzy0ckrm",
+          "scenarioId": "sc_order_create"
+        },
+        {
+          "id": "1ke6x9d0",
+          "scenarioId": "sc_wave_plan"
+        }
+      ],
+      "edges": [
+        {
+          "from": "kzy0ckrm",
+          "to": "1ke6x9d0"
+        }
+      ]
+    },
+    {
+      "id": "cgg17dl9",
+      "name": "New Workflow",
+      "steps": [],
+      "nodes": [
+        {
+          "id": "b6huu3vv",
+          "scenarioId": "sc_wave_plan"
+        },
+        {
+          "id": "i9zwj2en",
+          "scenarioId": "sc_pick_batch"
+        },
+        {
+          "id": "q2648wls",
+          "scenarioId": "sc_packing"
+        }
+      ],
+      "edges": [
+        {
+          "from": "b6huu3vv",
+          "to": "i9zwj2en"
+        },
+        {
+          "from": "i9zwj2en",
+          "to": "q2648wls"
+        }
+      ]
+    },
+    {
+      "id": "4v5rq29q",
+      "name": "test 2",
+      "steps": []
     }
   ]
 }

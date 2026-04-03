@@ -202,6 +202,13 @@ interface Actions {
   renameDataType: (oldName: string, newName: string) => void;
   deleteDataType: (name: string) => void;
 
+  // AI generation
+  mergeGenerated: (data: {
+    categories: { id: string; name: string }[];
+    scenarios: { id: string; name: string; categoryId: string; inputs: string[]; outputs: string[]; steps: string[] }[];
+    workflows: { id: string; name: string; steps: never[]; nodes: { id: string; scenarioId: string }[]; edges: { from: string; to: string }[] }[];
+  }) => void;
+
   // Helpers
   getAllKnownDataTypes: () => string[];
 }
@@ -438,6 +445,31 @@ export const useStore = create<AppState & Actions>()(
             inputs: s.inputs.filter((i) => i !== name),
             outputs: s.outputs.filter((o) => o !== name),
           })),
+        });
+      },
+
+      mergeGenerated: (data) => {
+        const state = get();
+        // Merge categories (skip duplicates by id)
+        const existingCatIds = new Set(state.categories.map((c) => c.id));
+        const newCats = data.categories.filter((c) => !existingCatIds.has(c.id));
+
+        // Merge scenarios (skip duplicates by id)
+        const existingScIds = new Set(state.scenarios.map((s) => s.id));
+        const newScenarios = data.scenarios
+          .filter((s) => !existingScIds.has(s.id))
+          .map((s) => ({ ...s, steps: s.steps ?? [] }));
+
+        // Merge workflows (skip duplicates by id)
+        const existingWfIds = new Set(state.workflows.map((w) => w.id));
+        const newWorkflows = data.workflows
+          .filter((w) => !existingWfIds.has(w.id))
+          .map((w) => ({ ...w, steps: w.steps ?? [] }));
+
+        set({
+          categories: [...state.categories, ...newCats],
+          scenarios: [...state.scenarios, ...newScenarios],
+          workflows: [...state.workflows, ...newWorkflows],
         });
       },
 
